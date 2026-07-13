@@ -1,11 +1,8 @@
 import { Router, Request, Response } from "express";
 import { StatusCodes } from "../entities/shared/infraestructure/lib/http-status-codes";
 import { env } from "../entities/shared/infraestructure/config/environments";
-import { userProfileRoutes } from "./routes/user-profile.routes";
-import { dashboardRoutes } from "./routes/dashboard.routes";
-import { authMiddleware } from "./middlewares/auth.middleware";
-import { requestContextMiddleware } from "./middlewares/request-context.middleware";
 import { getServicesHealth } from "../bff/infrastructure/config/backend-services.config";
+import { chatRoutes } from "./routes/chat.routes";
 
 export function api(): Router {
   const router = Router();
@@ -99,21 +96,9 @@ export function api(): Router {
     }
   });
 
-  // Protected BFF routes
-  const bffRouter = Router();
-
-  // Apply auth middleware
-  bffRouter.use(authMiddleware);
-
-  // Apply request context middleware (extracts user info, correlation ID, etc.)
-  bffRouter.use(requestContextMiddleware);
-
-  // BFF aggregation routes
-  bffRouter.use("/bff/user-profile", userProfileRoutes());
-  bffRouter.use("/bff/dashboard", dashboardRoutes());
-
-  // Mount BFF routes
-  router.use("/", bffRouter);
+  // Chat del widget → ms-agents (streaming passthrough). Público: la identidad
+  // de organización viaja en el header/body como unique-tenant-token.
+  router.use("/chat", chatRoutes());
 
   return router;
 }

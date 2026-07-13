@@ -1,7 +1,7 @@
 import { redisCache } from "../../../bootstrap";
 import { env } from "../../../entities/shared/infraestructure/config/environments";
 import { logger } from "../../../entities/shared/infraestructure/utils/logger";
-import { BffCacheTTL, buildCacheKey, buildInvalidationPattern } from "./cache-keys.enum";
+import { BffCacheTTL, buildInvalidationPattern } from "./cache-keys.enum";
 import * as crypto from "crypto";
 
 /**

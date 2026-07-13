@@ -1,10 +1,11 @@
 {
-  "name": "globalsone-bff-template",
+  "name": "globalsone-bff-widget",
   "version": "1.0.0",
-  "description": "BFF (Backend for Frontend) template for GlobalS1 microservices architecture - aggregates data from multiple services",
+  "description": "BFF (Backend for Frontend) del GIA Widget - orquesta ms-agents, ms-auth y ms-customers",
   "main": "build/index.js",
+  "packageManager": "pnpm@9.15.4",
   "scripts": {
-    "dev": "nodemon index.ts",
+    "dev": "npx tsx watch index.ts",
     "start": "node build/index.js",
     "build": "tsc",
     "test": "jest --verbose --detectOpenHandles",
@@ -15,8 +16,10 @@
   "keywords": [
     "bff",
     "backend-for-frontend",
+    "widget",
+    "chat",
+    "gia",
     "microservices",
-    "aggregation",
     "express",
     "typescript",
     "docker"
@@ -46,6 +49,7 @@
     "nodemon": "^3.0.1",
     "pino-pretty": "^11.0.0",
     "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }
 }

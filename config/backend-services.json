@@ -1,31 +1,24 @@
 {
   "services": {
-    "users": {
-      "name": "users-service",
-      "baseUrl": "${USERS_SERVICE_URL}",
+    "auth": {
+      "name": "ms-auth",
+      "baseUrl": "${MS_AUTH_URL}",
       "timeout": 5000,
       "retries": 2,
-      "healthPath": "/v1/health"
+      "healthPath": "/health"
     },
-    "orders": {
-      "name": "orders-service",
-      "baseUrl": "${ORDERS_SERVICE_URL}",
+    "agents": {
+      "name": "ms-agents",
+      "baseUrl": "${MS_AGENTS_URL}",
       "timeout": 5000,
       "retries": 2,
-      "healthPath": "/v1/health"
+      "healthPath": "/health"
     },
-    "products": {
-      "name": "products-service",
-      "baseUrl": "${PRODUCTS_SERVICE_URL}",
+    "customers": {
+      "name": "ms-customers",
+      "baseUrl": "${MS_CUSTOMERS_URL}",
       "timeout": 5000,
       "retries": 2,
-      "healthPath": "/v1/health"
-    },
-    "notifications": {
-      "name": "notifications-service",
-      "baseUrl": "${NOTIFICATIONS_SERVICE_URL}",
-      "timeout": 3000,
-      "retries": 1,
       "healthPath": "/v1/health"
     }
   }

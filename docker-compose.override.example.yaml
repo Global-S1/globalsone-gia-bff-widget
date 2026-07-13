@@ -1,0 +1,11 @@
+services:
+  bff-widget-gia:
+    build:
+      context: .
+      target: development
+    command: pnpm dev
+    volumes:
+      - ./src:/app/src
+      - ./index.ts:/app/index.ts
+      - ./package.json:/app/package.json
+      - ./pnpm-lock.yaml:/app/pnpm-lock.yaml

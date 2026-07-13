@@ -104,7 +104,7 @@ export abstract class BaseServiceClient implements IServiceClient {
     const url = this.buildUrl(options.path, options.query);
     const headers = this.buildHeaders(options.headers, context);
 
-    const requestOptions: Dispatcher.RequestOptions = {
+    const requestOptions: Omit<Dispatcher.RequestOptions, "origin" | "path"> = {
       method: options.method,
       headers,
       headersTimeout: timeout,

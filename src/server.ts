@@ -25,11 +25,14 @@ export function server(): Express {
         "X-API-Key",
         "X-Correlation-ID",
         "X-Request-ID",
+        "unique-tenant-token",
+        "ip-address",
       ],
       exposedHeaders: [
         "X-Correlation-ID",
         "X-BFF-Duration",
         "X-Partial-Failures",
+        "Chat-Session-Id",
       ],
     })
   );
@@ -64,6 +67,15 @@ export function server(): Express {
       })
     );
   }
+
+  // Root health endpoint (used by container/orchestrator healthchecks)
+  app.get("/health", (_req: Request, res: Response) => {
+    res.status(StatusCodes.OK).json({
+      status: "healthy",
+      service: env.app.name,
+      timestamp: new Date().toISOString(),
+    });
+  });
 
   // API routes
   app.use("/v1", api());

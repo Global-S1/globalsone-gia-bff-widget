@@ -16,21 +16,12 @@ interface IEnvBff {
   cacheDefaultTtl: number;
 }
 
-interface IEnvBackendService {
-  url: string;
-}
-
-interface IEnvBackendServices {
-  users: IEnvBackendService;
-  orders: IEnvBackendService;
-  products: IEnvBackendService;
-  notifications: IEnvBackendService;
-}
-
 export interface IEnvironments {
   stage: string;
   app: IEnvApp;
   services: IEnvServices;
   bff: IEnvBff;
-  backendServices: IEnvBackendServices;
+  internalServiceToken?: string;
+  /** Usuario-servicio del widget (puente temporal hasta que ms-agents lo resuelva por org). */
+  widgetServiceUserId?: string;
 }

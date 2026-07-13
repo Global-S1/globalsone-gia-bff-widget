@@ -21,9 +21,14 @@ export class Redis implements ICacheService {
   private connected: boolean = false;
 
   constructor() {
-    this.client = createClient({
-      url: `${env.services.cache.redis?.host}`,
-    });
+    const host = env.services.cache.redis?.host || "localhost";
+    const port = process.env.REDIS_PORT || "6379";
+    const url =
+      host.startsWith("redis://") || host.startsWith("rediss://")
+        ? host
+        : `redis://${host}:${port}`;
+
+    this.client = createClient({ url });
   }
 
   async connect(): Promise<void> {

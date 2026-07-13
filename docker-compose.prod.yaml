@@ -1,80 +1,32 @@
 services:
-  # BFF Service - Production
-  bff-service:
-    image: ${DOCKER_REGISTRY:-}globalsone-bff:${IMAGE_TAG:-latest}
+  bff-widget-gia:
+    container_name: bff-widget-gia-prod
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: globalsone-bff
     restart: always
-    ports:
-      - "${APP_PORT:-3000}:3000"
     environment:
-      - NODE_ENV=production
-      - STAGE=PROD
-      - APP_NAME=${APP_NAME:-BFF-SERVICE}
-      - APP_PORT=3000
-      - REDIS_HOST=${REDIS_HOST}
-      - BFF_JWT_SECRET=${BFF_JWT_SECRET}
+      - NODE_ENV=${NODE_ENV:-production}
+      - APP_PORT=${APP_PORT:-3000}
+      - REDIS_HOST=${REDIS_HOST:-redis-global-gia-prod}
+      - REDIS_PORT=${REDIS_PORT:-6379}
       - BFF_CACHE_ENABLED=${BFF_CACHE_ENABLED:-true}
       - BFF_CACHE_DEFAULT_TTL=${BFF_CACHE_DEFAULT_TTL:-300}
-      - USERS_SERVICE_URL=${USERS_SERVICE_URL}
-      - ORDERS_SERVICE_URL=${ORDERS_SERVICE_URL}
-      - PRODUCTS_SERVICE_URL=${PRODUCTS_SERVICE_URL}
-      - NOTIFICATIONS_SERVICE_URL=${NOTIFICATIONS_SERVICE_URL}
-    deploy:
-      mode: replicated
-      replicas: ${REPLICAS:-2}
-      resources:
-        limits:
-          cpus: "${CPU_LIMIT:-1}"
-          memory: ${MEMORY_LIMIT:-512M}
-        reservations:
-          cpus: "${CPU_RESERVATION:-0.25}"
-          memory: ${MEMORY_RESERVATION:-256M}
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
-        window: 120s
-      update_config:
-        parallelism: 1
-        delay: 10s
-        failure_action: rollback
-        order: start-first
-      rollback_config:
-        parallelism: 1
-        delay: 10s
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/v1/health/live"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-        labels: "service,environment"
-    labels:
-      - "service=bff"
-      - "environment=production"
-      - "traefik.enable=true"
-      - "traefik.http.routers.bff.rule=Host(`${BFF_DOMAIN:-bff.example.com}`)"
-      - "traefik.http.routers.bff.entrypoints=websecure"
-      - "traefik.http.routers.bff.tls.certresolver=letsencrypt"
-      - "traefik.http.services.bff.loadbalancer.server.port=3000"
-      - "traefik.http.services.bff.loadbalancer.healthcheck.path=/v1/health/live"
-      - "traefik.http.services.bff.loadbalancer.healthcheck.interval=30s"
+      - MS_AUTH_URL=${MS_AUTH_URL:-http://ms-auth-gia-prod:3020}
+      - MS_AGENTS_URL=${MS_AGENTS_URL:-http://ms-agents-gia-prod:3040}
+      - MS_CUSTOMERS_URL=${MS_CUSTOMERS_URL:-http://ms-customers-gia-prod:3000}
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
     networks:
-      - bff-network
-      - backend-network
+      coolify:
+        aliases:
+          - bff-widget-gia-prod
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
 networks:
-  bff-network:
-    driver: overlay
-    attachable: true
-  backend-network:
+  coolify:
     external: true
-    name: ${BACKEND_NETWORK:-globalsone-backend}
