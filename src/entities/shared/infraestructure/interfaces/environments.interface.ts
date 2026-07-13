@@ -22,6 +22,4 @@ export interface IEnvironments {
   services: IEnvServices;
   bff: IEnvBff;
   internalServiceToken?: string;
-  /** Usuario-servicio del widget (puente temporal hasta que ms-agents lo resuelva por org). */
-  widgetServiceUserId?: string;
 }

@@ -21,5 +21,4 @@ export const env: IEnvironments = {
     cacheDefaultTtl: Number(process.env.BFF_CACHE_DEFAULT_TTL || 300),
   },
   internalServiceToken: process.env.INTERNAL_SERVICE_TOKEN,
-  widgetServiceUserId: process.env.WIDGET_SERVICE_USER_ID,
 };

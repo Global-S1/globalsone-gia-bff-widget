@@ -2,7 +2,6 @@ import { BaseServiceClient } from "./base-service-client";
 import { getServiceConfig, ServiceKeys } from "../config/backend-services.config";
 import { IRequestContext } from "../../domain/interfaces/request-context.interface";
 import { IServiceResponse } from "../../domain/interfaces/service-response.interface";
-import { env } from "../../../entities/shared/infraestructure/config/environments";
 import type { Dispatcher } from "undici";
 
 export interface ICreateChatParams {
@@ -56,7 +55,8 @@ export class AgentsServiceClient extends BaseServiceClient {
       Accept: "text/plain",
       // Identity translation: el token del widget identifica la organización.
       "x-unique-token": params.uniqueToken,
-      // Marca de canal: ms-agents resuelve el usuario-servicio del widget por org.
+      // Marca de canal: ms-agents aplica el tope diario por usuario final (IP)
+      // solo cuando el canal es widget.
       "x-channel": "widget",
     };
 
@@ -64,11 +64,13 @@ export class AgentsServiceClient extends BaseServiceClient {
       headers["ip-address"] = params.ipAddress;
     }
 
-    // Puente temporal hasta que ms-agents resuelva el usuario-servicio por org:
-    // si se configura WIDGET_SERVICE_USER_ID, se envía como x-user-id para poder
-    // probar el flujo contra el ms-agents actual (que hoy exige x-user-id).
-    if (env.widgetServiceUserId) {
-      headers["x-user-id"] = env.widgetServiceUserId;
+    // Identidad del widget: los visitantes son anónimos, así que el agentId
+    // (público, ya viaja en el snippet) hace de x-user-id. ms-agents no valida
+    // este id contra ms-auth; sin membership, la cuota se rige por el límite de
+    // la organización + el tope por-IP del agente. El aislamiento de memoria lo
+    // da el chatSessionId (UUID por conversación), no la identidad.
+    if (params.agentId) {
+      headers["x-user-id"] = params.agentId;
     }
 
     // Primer turno: se ata el agente entrenado. Turnos siguientes: se encadena
