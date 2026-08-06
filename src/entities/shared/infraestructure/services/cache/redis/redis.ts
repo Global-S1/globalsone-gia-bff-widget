@@ -28,7 +28,13 @@ export class Redis implements ICacheService {
         ? host
         : `redis://${host}:${port}`;
 
-    this.client = createClient({ url });
+    // Spread condicional: pasar `password: undefined` haría que node-redis
+    // mandara AUTH igualmente, y un Redis sin requirepass rechaza la conexión
+    // con "ERR Client sent AUTH, but no password is set".
+    this.client = createClient({
+      url,
+      ...(process.env.REDIS_PASSWORD ? { password: process.env.REDIS_PASSWORD } : {}),
+    });
   }
 
   async connect(): Promise<void> {

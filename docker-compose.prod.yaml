@@ -10,6 +10,7 @@ services:
       - APP_PORT=${APP_PORT:-3000}
       - REDIS_HOST=${REDIS_HOST:-redis-global-gia-prod}
       - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
       - BFF_CACHE_ENABLED=${BFF_CACHE_ENABLED:-true}
       - BFF_CACHE_DEFAULT_TTL=${BFF_CACHE_DEFAULT_TTL:-300}
       - MS_AUTH_URL=${MS_AUTH_URL:-http://ms-auth-gia-prod:3020}
