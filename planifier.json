@@ -1,0 +1,20 @@
+{
+  "name": "globalsone-gia-bff-widget",
+  "profile": "full",
+  "outline": {
+    "collection_id": "87787c7d-c526-44dc-b25c-f1d3308b2cc0"
+  },
+  "workspace": "Dicea AI",
+  "git": {
+    "base": "develop-globalsone",
+    "agent": "implementador-node"
+  },
+  "commands": {
+    "test": "npm test",
+    "test_one": "npm test -- {archivo}",
+    "lint": "npm run lint"
+  },
+  "implements": {
+    "component": "CA-011"
+  }
+}
