@@ -1,2 +1,7 @@
+# Repo de un solo paquete. `packages` es OBLIGATORIO para pnpm 9+: sin él,
+# cualquier `pnpm install`/`add`/`run` falla con "packages field missing or empty".
+packages:
+  - "."
+
 allowBuilds:
   esbuild: false

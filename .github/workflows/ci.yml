@@ -1,0 +1,62 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [develop-globalsone, prod-globalsone]
+  pull_request:
+    branches: [develop-globalsone, prod-globalsone]
+
+env:
+  # Coincide con el Dockerfile (node:20-alpine) para no validar sobre un runtime
+  # distinto al que se despliega.
+  NODE_VERSION: '20'
+  # La misma que activa el corepack del Dockerfile.
+  PNPM_VERSION: '9.15.4'
+
+# SIN job de lint, y no por olvido: este repositorio declara
+# `"lint": "eslint . --ext .ts"` pero NO tiene eslint instalado, asi que el
+# script falla con `eslint: not found`. Lo mismo que su `"test": "jest ..."` con
+# jest ausente, y lo mismo en los otros tres BFF y en ms-routing: cinco
+# repositorios con comandos declarados que nunca pudieron ejecutarse. Anadir
+# eslint es otro trabajo; cablear en el CI un paso que se sabe roto, no.
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      # Con cobertura, no sin ella: el umbral de vitest.config.ts solo muerde si
+      # se mide. Un `pnpm test` a secas pasaria aunque la cobertura cayera.
+      - run: pnpm run test:coverage
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run build
