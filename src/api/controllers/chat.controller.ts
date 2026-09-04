@@ -9,6 +9,10 @@ import { obtenerConfiguracionDeWidget } from "../../bff/application/use-cases/wi
 import { IRequestContext } from "../../bff/domain/interfaces/request-context.interface";
 import { IServiceResponse } from "../../bff/domain/interfaces/service-response.interface";
 import { logger } from "../../entities/shared/infraestructure/utils/logger";
+import {
+  CABECERA_DE_FOTOS,
+  codificarFotos,
+} from "./fotos-en-cabecera";
 
 /**
  * POST /v1/chat/create-chat
@@ -34,6 +38,8 @@ import { logger } from "../../entities/shared/infraestructure/utils/logger";
  *   · `Chat-Session-Id`: sólo por el camino de ms-agents; es SU sesión.
  *   · `Contact-Form-Url`: sólo cuando ms-leads derivó y el tenant tiene
  *     formulario configurado (RF-020).
+ *   · `Chat-Photos`: las fotos que el agente señaló, codificadas (SPEC-183).
+ *     Sólo por el camino de ms-leads y sólo cuando hay alguna.
  *   · 4xx/5xx: JSON `{ success, message }` — `message` es lo que el widget
  *     enseña a quien escribe.
  */
@@ -241,11 +247,18 @@ async function atenderPorLeads(
   }
 
   const enlace = enlaceQueSePuedeOfrecer(respuesta.data.formularioDeContacto);
+  // SPEC-183 · RF-021: las fotos van FUERA del cuerpo, porque el cuerpo es el
+  // texto que lee quien escribe. Si no cabe ninguna se manda el texto sin
+  // ellas: antes menos fotos que dejar al visitante sin respuesta.
+  const fotos = codificarFotos(respuesta.data.fotos);
 
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   if (enlace) {
     res.setHeader("Contact-Form-Url", enlace);
+  }
+  if (fotos) {
+    res.setHeader(CABECERA_DE_FOTOS, fotos);
   }
   res.status(StatusCodes.OK);
   // `texto: null` es un estado terminal de la conversación, no un fallo: ahí no

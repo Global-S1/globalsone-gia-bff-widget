@@ -125,6 +125,9 @@ function respuestaDeLeads(extra: Record<string, unknown> = {}) {
       clase: null,
       porque: null,
       contacto: { nombre: null, correo: null, telefono: null },
+      // SPEC-182: **siempre presente y vacía cuando no hay ninguna**, nunca
+      // ausente y nunca nula. Verificado en `ms-leads/src/orquestador.ts`.
+      fotos: [] as string[],
       derivada: false,
       formularioDeContacto: null,
       ...extra,
@@ -541,5 +544,124 @@ describe("SPEC-181 · el identificador de visitante llega desde el widget", () =
 
     expect(createChatStream).toHaveBeenCalledTimes(1);
     expect(atenderMensajeDelWidget).not.toHaveBeenCalled();
+  });
+});
+
+
+// ── SPEC-183 ────────────────────────────────────────────────────────────────
+
+/** Lo que hará el widget con la cabecera. */
+function fotosQueLeeElNavegador(res: RespuestaFalsa): string[] | undefined {
+  const valor = res.cabeceras["Chat-Photos"];
+  if (valor === undefined) return undefined;
+  return JSON.parse(Buffer.from(valor, "base64").toString("utf8")) as string[];
+}
+
+const UNA_FOTO = "https://cdn.acme.example/catalogo/silla-roja.jpg";
+const OTRA_FOTO = "https://cdn.acme.example/catalogo/silla-azul.jpg";
+
+describe("SPEC-183 · las fotos hacia el navegador", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    limpiarCacheDeConfiguracionDeWidget();
+    createChatStream.mockResolvedValue(respuestaDeAgents());
+    // Un agente con la clasificación de leads encendida.
+    getWidgetConfig.mockResolvedValue(configuracion(true));
+  });
+
+  it("Las fotos llegan al widget", async () => {
+    atenderMensajeDelWidget.mockResolvedValue(
+      respuestaDeLeads({
+        texto: "Tengo estas dos sillas.",
+        fotos: [UNA_FOTO, OTRA_FOTO],
+      }),
+    );
+    const res = respuesta();
+
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
+
+    // Las dos direcciones, en su orden.
+    expect(fotosQueLeeElNavegador(res)).toEqual([UNA_FOTO, OTRA_FOTO]);
+    // Y el cuerpo sigue siendo SÓLO el texto del agente: lo que se meta ahí se
+    // le pinta a quien escribe, así que no cabe nada más.
+    await expect(res.cuerpo()).resolves.toBe("Tengo estas dos sillas.");
+    expect(res.cabeceras["Content-Type"]).toBe("text/plain; charset=utf-8");
+  });
+
+  it("Sin fotos no se manda nada de esto", async () => {
+    // ms-leads manda `fotos: []` —siempre presente, vacía cuando no hay
+    // ninguna (SPEC-182)—, y una lista vacía NO es una cabecera vacía.
+    atenderMensajeDelWidget.mockResolvedValue(respuestaDeLeads({ fotos: [] }));
+    const res = respuesta();
+
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
+
+    expect(res.cabeceras["Chat-Photos"]).toBeUndefined();
+    await expect(res.cuerpo()).resolves.toBe("respuesta desde leads");
+  });
+
+  it("Una dirección que no es http o https no se entrega", async () => {
+    atenderMensajeDelWidget.mockResolvedValue(
+      respuestaDeLeads({ fotos: ["javascript:alert(1)", UNA_FOTO] }),
+    );
+    const res = respuesta();
+
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
+
+    expect(fotosQueLeeElNavegador(res)).toEqual([UNA_FOTO]);
+  });
+
+  it("Una lista demasiado grande no rompe la respuesta", async () => {
+    // Detrás hay un nginx que lee las cabeceras en un buffer fijo: pasarse
+    // pierde la respuesta ENTERA, texto incluido. Antes menos fotos que nada.
+    const larga = `https://cdn.acme.example/catalogo/${"a".repeat(300)}.jpg`;
+    atenderMensajeDelWidget.mockResolvedValue(
+      respuestaDeLeads({
+        texto: "Mira el catálogo.",
+        fotos: Array.from({ length: 40 }, (_, i) => `${larga}?n=${i}`),
+      }),
+    );
+    const res = respuesta();
+
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
+
+    const entregadas = fotosQueLeeElNavegador(res) as string[];
+    expect(entregadas.length).toBeGreaterThan(0);
+    expect(entregadas.length).toBeLessThan(40);
+    // Y el texto sale igual.
+    expect(res.codigo).toBe(200);
+    await expect(res.cuerpo()).resolves.toBe("Mira el catálogo.");
+  });
+
+  it("Las fotos y el enlace del formulario caben en la misma respuesta", async () => {
+    // Son dos cabeceras distintas y ninguna estorba a la otra: una conversación
+    // derivada puede seguir enseñando lo que el agente señaló.
+    atenderMensajeDelWidget.mockResolvedValue(
+      respuestaDeLeads({
+        derivada: true,
+        formularioDeContacto: "https://tenant.example/contacto",
+        fotos: [UNA_FOTO],
+      }),
+    );
+    const res = respuesta();
+
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
+
+    expect(res.cabeceras["Contact-Form-Url"]).toBe("https://tenant.example/contacto");
+    expect(fotosQueLeeElNavegador(res)).toEqual([UNA_FOTO]);
+  });
+
+  it("El camino de siempre no cambia", async () => {
+    // Un agente con la clasificación apagada: ni una cabecera nueva, y el
+    // cuerpo se sigue sirviendo según se escribe.
+    getWidgetConfig.mockResolvedValue(configuracion(false));
+    const res = respuesta();
+
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
+
+    expect(createChatStream).toHaveBeenCalledTimes(1);
+    expect(res.cabeceras["Chat-Photos"]).toBeUndefined();
+    expect(res.cabeceras["Chat-Session-Id"]).toBe("sesion-1");
+    await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
   });
 });

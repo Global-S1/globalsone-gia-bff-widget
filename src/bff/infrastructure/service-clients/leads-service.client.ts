@@ -40,6 +40,20 @@ export interface IRespuestaDeLeads {
     readonly correo: string | null;
     readonly telefono: string | null;
   };
+  /**
+   * Las fotos que el agente señaló, **en el orden en que las señaló**
+   * (SPEC-182 · RF-021 · ADR-035).
+   *
+   * Son **direcciones y no ficheros**: una foto que el agente señala no es algo
+   * nuestro, es una `https` que ya vivía en internet —la del catálogo del
+   * tenant— y la pinta el navegador de quien escribe. Sus bytes no pasan por
+   * aquí, y traerlos por dentro nos costaría ancho de banda para no mejorar
+   * nada (ADR-035).
+   *
+   * **Siempre presente y vacía cuando no hay ninguna**, nunca ausente y nunca
+   * nula: verificado en `ms-leads/src/orquestador.ts`.
+   */
+  readonly fotos: readonly string[];
   readonly derivada: boolean;
   /** La dirección del formulario del tenant, sólo cuando hay derivación (RF-020). */
   readonly formularioDeContacto: string | null;
