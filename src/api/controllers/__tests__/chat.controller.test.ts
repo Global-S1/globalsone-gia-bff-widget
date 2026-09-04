@@ -1,6 +1,6 @@
 // Importados explícitamente, no por `globals: true`: el tsconfig de este repo
 // restringe typeRoots, así que "vitest/globals" no resuelve como tipo.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PassThrough, Readable } from "stream";
 import type { Request, Response } from "express";
 
@@ -26,6 +26,7 @@ vi.mock("../../../bff/infrastructure/service-clients/leads-service.client", () =
 
 import { createChat } from "../chat.controller";
 import { limpiarCacheDeConfiguracionDeWidget } from "../../../bff/infrastructure/cache/widget-config.cache";
+import { logger } from "../../../entities/shared/infraestructure/utils/logger";
 
 const AGENTE = "agente-1";
 const ORGANIZACION = "org-1";
@@ -142,7 +143,7 @@ describe("SPEC-167 · la puerta del mensaje del widget", () => {
     getWidgetConfig.mockResolvedValue(configuracion(false));
     const res = respuesta();
 
-    await createChat(peticion({ agentId: AGENTE, visitorId: VISITANTE }), comoRespuesta(res));
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
 
     expect(createChatStream).toHaveBeenCalledTimes(1);
     expect(atenderMensajeDelWidget).not.toHaveBeenCalled();
@@ -157,7 +158,7 @@ describe("SPEC-167 · la puerta del mensaje del widget", () => {
     atenderMensajeDelWidget.mockResolvedValue(respuestaDeLeads());
     const res = respuesta();
 
-    await createChat(peticion({ agentId: AGENTE, visitorId: VISITANTE }), comoRespuesta(res));
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
 
     expect(atenderMensajeDelWidget).toHaveBeenCalledTimes(1);
     expect(createChatStream).not.toHaveBeenCalled();
@@ -170,7 +171,7 @@ describe("SPEC-167 · la puerta del mensaje del widget", () => {
     getWidgetConfig.mockResolvedValue(configuracion(true));
     atenderMensajeDelWidget.mockResolvedValue(respuestaDeLeads());
 
-    await createChat(peticion({ agentId: AGENTE, visitorId: VISITANTE }), comoRespuesta(respuesta()));
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(respuesta()));
 
     expect(atenderMensajeDelWidget).toHaveBeenCalledWith(
       expect.objectContaining({ organizacionId: ORGANIZACION }),
@@ -182,8 +183,8 @@ describe("SPEC-167 · la puerta del mensaje del widget", () => {
     getWidgetConfig.mockResolvedValue(configuracion(true));
     atenderMensajeDelWidget.mockResolvedValue(respuestaDeLeads());
 
-    await createChat(peticion({ agentId: AGENTE, visitorId: VISITANTE }), comoRespuesta(respuesta()));
-    await createChat(peticion({ agentId: AGENTE, visitorId: VISITANTE }), comoRespuesta(respuesta()));
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(respuesta()));
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(respuesta()));
 
     expect(atenderMensajeDelWidget).toHaveBeenCalledTimes(2);
     expect(getWidgetConfig).toHaveBeenCalledTimes(1);
@@ -198,7 +199,7 @@ describe("SPEC-167 · la puerta del mensaje del widget", () => {
     });
     const res = respuesta();
 
-    await createChat(peticion({ agentId: AGENTE, visitorId: VISITANTE }), comoRespuesta(res));
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
 
     expect(createChatStream).toHaveBeenCalledTimes(1);
     expect(atenderMensajeDelWidget).not.toHaveBeenCalled();
@@ -210,7 +211,7 @@ describe("SPEC-167 · la puerta del mensaje del widget", () => {
     getWidgetConfig.mockRejectedValue(new Error("boom"));
     const res = respuesta();
 
-    await createChat(peticion({ agentId: AGENTE, visitorId: VISITANTE }), comoRespuesta(res));
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
 
     expect(createChatStream).toHaveBeenCalledTimes(1);
     await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
@@ -226,8 +227,8 @@ describe("SPEC-167 · la puerta del mensaje del widget", () => {
     getWidgetConfig.mockResolvedValue(configuracion(true));
     atenderMensajeDelWidget.mockResolvedValue(respuestaDeLeads());
 
-    await createChat(peticion({ agentId: AGENTE, visitorId: VISITANTE }), comoRespuesta(respuesta()));
-    await createChat(peticion({ agentId: AGENTE, visitorId: VISITANTE }), comoRespuesta(respuesta()));
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(respuesta()));
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(respuesta()));
 
     expect(getWidgetConfig).toHaveBeenCalledTimes(2);
     expect(atenderMensajeDelWidget).toHaveBeenCalledTimes(1);
@@ -237,7 +238,7 @@ describe("SPEC-167 · la puerta del mensaje del widget", () => {
     getWidgetConfig.mockResolvedValue(configuracion(true));
     atenderMensajeDelWidget.mockResolvedValue(respuestaDeLeads());
 
-    await createChat(peticion({ agentId: AGENTE, visitorId: VISITANTE }), comoRespuesta(respuesta()));
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(respuesta()));
 
     expect(atenderMensajeDelWidget).toHaveBeenCalledWith(
       expect.objectContaining({ visitanteId: VISITANTE, agenteId: AGENTE, texto: "hola" }),
@@ -250,7 +251,7 @@ describe("SPEC-167 · la puerta del mensaje del widget", () => {
     atenderMensajeDelWidget.mockResolvedValue(respuestaDeLeads());
 
     await createChat(
-      peticion({ agentId: AGENTE, visitorId: VISITANTE }, { "ip-address": "203.0.113.9" }),
+      peticion({ agentId: AGENTE, visitanteId: VISITANTE }, { "ip-address": "203.0.113.9" }),
       comoRespuesta(respuesta()),
     );
 
@@ -263,7 +264,7 @@ describe("SPEC-167 · la puerta del mensaje del widget", () => {
   it("Un mensaje sin agente no entra por leads", async () => {
     const res = respuesta();
 
-    await createChat(peticion({ visitorId: VISITANTE }), comoRespuesta(res));
+    await createChat(peticion({ visitanteId: VISITANTE }), comoRespuesta(res));
 
     expect(getWidgetConfig).not.toHaveBeenCalled();
     expect(atenderMensajeDelWidget).not.toHaveBeenCalled();
@@ -295,7 +296,7 @@ describe("SPEC-167 · la puerta del mensaje del widget", () => {
     );
     const res = respuesta();
 
-    await createChat(peticion({ agentId: AGENTE, visitorId: VISITANTE }), comoRespuesta(res));
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
 
     expect(res.cabeceras["Contact-Form-Url"]).toBe("https://tenant.example/contacto");
     await expect(res.cuerpo()).resolves.toBe(
@@ -308,7 +309,7 @@ describe("SPEC-167 · la puerta del mensaje del widget", () => {
     atenderMensajeDelWidget.mockResolvedValue(respuestaDeLeads());
     const res = respuesta();
 
-    await createChat(peticion({ agentId: AGENTE, visitorId: VISITANTE }), comoRespuesta(res));
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
 
     expect(res.cabeceras["Contact-Form-Url"]).toBeUndefined();
   });
@@ -322,7 +323,7 @@ describe("SPEC-167 · la puerta del mensaje del widget", () => {
     );
     const res = respuesta();
 
-    await createChat(peticion({ agentId: AGENTE, visitorId: VISITANTE }), comoRespuesta(res));
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
 
     expect(res.cabeceras["Contact-Form-Url"]).toBeUndefined();
     expect(res.codigo).toBe(200);
@@ -345,7 +346,7 @@ describe("SPEC-167 · la puerta del mensaje del widget", () => {
     });
     const res = respuesta();
 
-    await createChat(peticion({ agentId: AGENTE, visitorId: VISITANTE }), comoRespuesta(res));
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
 
     expect(res.codigo).toBe(502);
     // El widget lee `kindMessage || message`; aquí va en `message`.
@@ -374,7 +375,7 @@ describe("SPEC-167 · la puerta del mensaje del widget", () => {
     });
     const res = respuesta();
 
-    await createChat(peticion({ agentId: AGENTE, visitorId: VISITANTE }), comoRespuesta(res));
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
 
     expect(res.codigo).toBe(502);
     expect(res.json).toHaveBeenCalledWith({
@@ -389,9 +390,156 @@ describe("SPEC-167 · la puerta del mensaje del widget", () => {
     atenderMensajeDelWidget.mockResolvedValue(respuestaDeLeads({ texto: null }));
     const res = respuesta();
 
-    await createChat(peticion({ agentId: AGENTE, visitorId: VISITANTE }), comoRespuesta(res));
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
 
     expect(res.codigo).toBe(200);
     await expect(res.cuerpo()).resolves.toBe("");
+  });
+});
+
+
+// ── SPEC-181 ────────────────────────────────────────────────────────────────
+
+/** El token de organización que el widget lleva en su fragmento del embed. */
+const TOKEN_DE_ORGANIZACION = "token-de-organizacion";
+
+/** Lo que `getUserIP()` resuelve en el widget antes de componer el cuerpo. */
+const IP_DEL_VISITANTE = "203.0.113.9";
+
+/**
+ * El cuerpo tal como lo compone el widget publicado.
+ *
+ * **Transcrito de** `globalsone-gia-widget/src/api.js`, función `sendQuestion`:
+ * el `JSON.stringify(...)` del `fetch` a `/chat/create-chat`, con la misma
+ * forma condicional de `agentId` y `chatSessionId` y el mismo
+ * `const visitanteId = fields.visitanteId || getVisitorId()`.
+ *
+ * **No se inventa, y esto es el SPEC entero.** El fallo de producción no estaba
+ * en el widget ni estaba aquí: estaba en la costura —el widget mandaba
+ * `visitanteId` y este bff leía `visitorId`— y ninguna de las dos suites la
+ * cruzaba, porque cada una escribía su propio cuerpo y por tanto sólo se
+ * confirmaba a sí misma. Un cuerpo escrito a mano en este fichero volvería a
+ * dejar el mismo hueco abierto.
+ *
+ * Si el widget cambia el nombre de un campo, esta copia se trae otra vez de
+ * allí; no se ajusta a lo que el bff espera leer.
+ */
+function cuerpoDelWidgetPublicado(): Record<string, unknown> {
+  // Lo que el componente `<chat-float>` le pasa a `sendQuestion`.
+  const fields: {
+    message: string;
+    uniqueOrganizationToken: string;
+    agentId?: string;
+    chatSessionId?: string;
+    visitanteId?: string;
+  } = {
+    message: "hola",
+    uniqueOrganizationToken: TOKEN_DE_ORGANIZACION,
+    agentId: AGENTE,
+  };
+  const userIp = IP_DEL_VISITANTE;
+  const visitanteId = fields.visitanteId || VISITANTE; // `|| getVisitorId()`
+
+  return {
+    message: fields.message,
+    uniqueTenantToken: fields.uniqueOrganizationToken,
+    ...(fields.agentId && { agentId: fields.agentId }),
+    ...(fields.chatSessionId && { chatSessionId: fields.chatSessionId }),
+    ipAddress: userIp,
+    visitanteId,
+  };
+}
+
+/** Las cabeceras del mismo `fetch`, con el cuerpo que se le dé. */
+function peticionDelWidget(cuerpo: Record<string, unknown>): Request {
+  return {
+    headers: {
+      "content-type": "application/json",
+      "unique-tenant-token": TOKEN_DE_ORGANIZACION,
+      "ip-address": IP_DEL_VISITANTE,
+    },
+    body: cuerpo,
+    ip: "10.0.0.1",
+  } as unknown as Request;
+}
+
+describe("SPEC-181 · el identificador de visitante llega desde el widget", () => {
+  let avisos: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    limpiarCacheDeConfiguracionDeWidget();
+    createChatStream.mockResolvedValue(respuestaDeAgents());
+    // Un agente con la clasificación de leads encendida.
+    getWidgetConfig.mockResolvedValue(configuracion(true));
+    atenderMensajeDelWidget.mockResolvedValue(respuestaDeLeads());
+    avisos = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    avisos.mockRestore();
+  });
+
+  it("El cuerpo que manda el widget de verdad entra por ms-leads", async () => {
+    const cuerpo = cuerpoDelWidgetPublicado();
+    const res = respuesta();
+
+    await createChat(peticionDelWidget(cuerpo), comoRespuesta(res));
+
+    expect(atenderMensajeDelWidget).toHaveBeenCalledTimes(1);
+    expect(createChatStream).not.toHaveBeenCalled();
+    // Y el identificador que recibe ms-leads es el que venía EN EL CUERPO: se
+    // lee de él, no de una constante del test, para que no pueda coincidir por
+    // casualidad con lo que el bff creyera estar leyendo.
+    expect(cuerpo.visitanteId).toBeTruthy();
+    expect(atenderMensajeDelWidget).toHaveBeenCalledWith(
+      expect.objectContaining({ visitanteId: cuerpo.visitanteId }),
+      expect.anything(),
+    );
+    await expect(res.cuerpo()).resolves.toBe("respuesta desde leads");
+  });
+
+  it("Un cuerpo sin identificador sigue cayendo al camino de siempre", async () => {
+    const cuerpo = cuerpoDelWidgetPublicado();
+    delete cuerpo.visitanteId;
+    const res = respuesta();
+
+    await createChat(peticionDelWidget(cuerpo), comoRespuesta(res));
+
+    expect(createChatStream).toHaveBeenCalledTimes(1);
+    expect(atenderMensajeDelWidget).not.toHaveBeenCalled();
+    // Y queda constancia: desde fuera, un agente encendido que no registra
+    // leads se ve como una avería y hay que poder distinguirlo (SPEC-167).
+    expect(avisos).toHaveBeenCalledWith(
+      expect.stringContaining("visitanteId"),
+      expect.objectContaining({ agentId: AGENTE }),
+    );
+    await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+  });
+
+  it("Un identificador en blanco cuenta como ausente", async () => {
+    const cuerpo = cuerpoDelWidgetPublicado();
+    cuerpo.visitanteId = "   ";
+    const res = respuesta();
+
+    await createChat(peticionDelWidget(cuerpo), comoRespuesta(res));
+
+    expect(createChatStream).toHaveBeenCalledTimes(1);
+    expect(atenderMensajeDelWidget).not.toHaveBeenCalled();
+  });
+
+  it("El nombre en inglés ya no se lee", async () => {
+    // No es compatibilidad hacia atrás: ninguna versión publicada del widget lo
+    // mandó nunca así. Admitir dos nombres para el mismo dato es exactamente lo
+    // que dejó pasar este fallo, así que el viejo tiene que quedar muerto.
+    const cuerpo = cuerpoDelWidgetPublicado();
+    delete cuerpo.visitanteId;
+    cuerpo.visitorId = VISITANTE;
+    const res = respuesta();
+
+    await createChat(peticionDelWidget(cuerpo), comoRespuesta(res));
+
+    expect(createChatStream).toHaveBeenCalledTimes(1);
+    expect(atenderMensajeDelWidget).not.toHaveBeenCalled();
   });
 });
