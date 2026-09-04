@@ -3,6 +3,7 @@ import { getServiceConfig, ServiceKeys } from "../config/backend-services.config
 import { IRequestContext } from "../../domain/interfaces/request-context.interface";
 import { IServiceResponse } from "../../domain/interfaces/service-response.interface";
 import { env } from "../../../entities/shared/infraestructure/config/environments";
+import { IWidgetConfig } from "../../domain/interfaces/widget-config.interface";
 import type { Dispatcher } from "undici";
 
 export interface ICreateChatParams {
@@ -44,6 +45,38 @@ export class AgentsServiceClient extends BaseServiceClient {
   async getStats(context: IRequestContext): Promise<IServiceResponse<any>> {
     return this.request<any>(
       { method: "GET", path: "/v1/stats", retries: 0 },
+      context
+    );
+  }
+
+  /**
+   * SPEC-162 — la configuración de widget de un agente, para decidir por qué
+   * puerta entra su visitante (SPEC-167 · ADR-034).
+   *
+   * Trae `organizationId`, y eso es lo que la hace imprescindible: este BFF
+   * tiene un TOKEN de organización, que identifica pero no dice cuál es, y
+   * ms-leads exige la organización en `x-tenant-id`.
+   *
+   * Ruta interna: lo que autoriza es el secreto compartido (ADR-011), no el
+   * token del widget. Sin él, 403.
+   */
+  async getWidgetConfig(
+    agentId: string,
+    context: IRequestContext
+  ): Promise<IServiceResponse<IWidgetConfig>> {
+    return this.request<IWidgetConfig>(
+      {
+        method: "GET",
+        path: `/v1/agents/${encodeURIComponent(agentId)}/widget-config`,
+        // Un reintento y no dos: esta consulta va DELANTE de la respuesta al
+        // visitante, y su fallo no le deja sin contestar —se cae al camino de
+        // hoy—, así que esperar de más aquí sólo alarga el silencio.
+        retries: 1,
+        timeout: 3000,
+        headers: {
+          "x-internal-service-token": env.internalServiceToken ?? "",
+        },
+      },
       context
     );
   }
