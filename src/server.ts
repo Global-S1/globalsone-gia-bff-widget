@@ -6,6 +6,7 @@ import { AppError } from "./entities/shared/domain/error/app-error";
 import { appConsole } from "./entities/shared/infraestructure/utils/app-console";
 import { StatusCodes } from "./entities/shared/infraestructure/lib/http-status-codes";
 import { correlationIdMiddleware } from "./api/middlewares/correlation-id.middleware";
+import { CABECERA_DE_FOTOS } from "./api/controllers/fotos-en-cabecera";
 import { api } from "./api/api";
 
 export function server(): Express {
@@ -38,6 +39,10 @@ export function server(): Express {
         // SPEC-167 · RF-020: la direccion del formulario del tenant, cuando
         // ms-leads derivo la conversacion.
         "Contact-Form-Url",
+        // SPEC-183 · RF-021: las fotos que el agente senalo. El nombre sale del
+        // modulo que las pone, no de un literal repetido: dos literales se
+        // separan con el tiempo y la cabecera se volveria invisible sin error.
+        CABECERA_DE_FOTOS,
       ],
     })
   );
