@@ -28,11 +28,16 @@ export function server(): Express {
         "unique-tenant-token",
         "ip-address",
       ],
+      // Sin esto, el navegador NO deja al widget leerlas: una cabecera de
+      // respuesta que no se expone existe y es invisible desde el script.
       exposedHeaders: [
         "X-Correlation-ID",
         "X-BFF-Duration",
         "X-Partial-Failures",
         "Chat-Session-Id",
+        // SPEC-167 · RF-020: la direccion del formulario del tenant, cuando
+        // ms-leads derivo la conversacion.
+        "Contact-Form-Url",
       ],
     })
   );

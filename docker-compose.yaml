@@ -16,6 +16,8 @@ services:
       - MS_AUTH_URL=${MS_AUTH_URL:-http://ms-auth-gia-dev:3020}
       - MS_AGENTS_URL=${MS_AGENTS_URL:-http://ms-agents-gia-dev:3040}
       - MS_CUSTOMERS_URL=${MS_CUSTOMERS_URL:-http://ms-customers-gia-dev:3000}
+      # SPEC-167 - la segunda puerta del mensaje del widget (ADR-034).
+      - MS_LEADS_URL=${MS_LEADS_URL:-http://ms-leads-gia-dev:3150}
       - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
     networks:
       coolify:

@@ -126,6 +126,12 @@ export const ServiceKeys = {
   AUTH: "auth",
   AGENTS: "agents",
   CUSTOMERS: "customers",
+  /**
+   * SPEC-167 · ADR-034 — la segunda puerta del mensaje del widget. Sólo se usa
+   * para los agentes con la clasificación de leads encendida; el resto sigue
+   * yendo a AGENTS.
+   */
+  LEADS: "leads",
 } as const;
 
 export type ServiceKey = (typeof ServiceKeys)[keyof typeof ServiceKeys];
