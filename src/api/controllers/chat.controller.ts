@@ -24,7 +24,7 @@ import { logger } from "../../entities/shared/infraestructure/utils/logger";
  * Entrada (widget):
  *   headers: `unique-tenant-token`, `ip-address`
  *   body:    { message, uniqueTenantToken, agentId?, chatSessionId?, ipAddress?,
- *              visitorId? }
+ *              visitanteId? }
  *
  * Salida, **la misma forma por las dos puertas**: `200 text/plain` con el texto
  * de la respuesta. Por el camino de ms-agents se sirve según se escribe, para
@@ -55,7 +55,7 @@ export async function createChat(req: Request, res: Response): Promise<void> {
     agentId?: string;
     chatSessionId?: string;
     ipAddress?: string;
-    visitorId?: string;
+    visitanteId?: string;
   };
 
   const uniqueToken =
@@ -67,8 +67,14 @@ export async function createChat(req: Request, res: Response): Promise<void> {
   // La identidad del lead en este canal (RF-018 · GLO-013): el identificador
   // que el widget conserva en el navegador. Sólo lo puede saber el navegador,
   // así que llega en el cuerpo; sin él no se puede entrar por leads.
-  const visitorId =
-    typeof body.visitorId === "string" ? body.visitorId.trim() : "";
+  //
+  // Se llama `visitanteId` **y sólo así** (SPEC-181): es el nombre con el que
+  // el widget lo manda (SPEC-168) y con el que ms-leads lo espera (SPEC-164).
+  // El nombre en inglés que había aquí no lo mandó nunca nadie, así que no hay
+  // compatibilidad que guardar; y admitir dos nombres para el mismo dato es
+  // justo lo que dejó pasar este fallo hasta producción.
+  const visitanteId =
+    typeof body.visitanteId === "string" ? body.visitanteId.trim() : "";
 
   if (!uniqueToken) {
     res.status(StatusCodes.UNAUTHORIZED).json({
@@ -98,11 +104,11 @@ export async function createChat(req: Request, res: Response): Promise<void> {
     const configuracion = await obtenerConfiguracionDeWidget(agentId, context);
 
     if (configuracion?.leadsEnabled) {
-      if (visitorId) {
+      if (visitanteId) {
         await atenderPorLeads(res, context, {
           organizacionId: configuracion.organizationId,
           agenteId: agentId,
-          visitanteId: visitorId,
+          visitanteId,
           texto: message,
           ...(ipAddress ? { ip: ipAddress } : {}),
         });
@@ -113,7 +119,7 @@ export async function createChat(req: Request, res: Response): Promise<void> {
       // visitante. Se atiende igual —quedarse mudo sería peor— y queda
       // constancia, porque desde fuera esto se ve como «los leads no entran».
       logger.warn(
-        "Agente con leads encendido y mensaje sin visitorId: se atiende por ms-agents",
+        "Agente con leads encendido y mensaje sin visitanteId: se atiende por ms-agents",
         { agentId }
       );
     }
