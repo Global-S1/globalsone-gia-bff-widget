@@ -20,6 +20,13 @@
       "timeout": 5000,
       "retries": 2,
       "healthPath": "/v1/health"
+    },
+    "leads": {
+      "name": "ms-leads",
+      "baseUrl": "${MS_LEADS_URL}",
+      "timeout": 5000,
+      "retries": 2,
+      "healthPath": "/health"
     }
   }
 }

@@ -2,7 +2,7 @@
 
 Backend for Frontend del **GIA Widget** (chatbot flotante `<chat-float>`). Orquesta las llamadas a los microservicios de la plataforma GIA y expone una API estable y agregada para el widget embebible.
 
-Orquesta: **ms-agents** (chat / IA), **ms-auth** (validación de token de organización / RBAC) y **ms-customers** (datos de cliente / tenant).
+Orquesta: **ms-agents** (chat / IA), **ms-leads** (Gia Leads: lead, conversación y clasificación del visitante), **ms-auth** (validación de token de organización / RBAC) y **ms-customers** (datos de cliente / tenant).
 
 ### 🚥 Mapa de Infraestructura (Regla del 20)
 
@@ -12,6 +12,7 @@ Orquesta: **ms-agents** (chat / IA), **ms-auth** (validación de token de organi
 | **ms-auth** | 3020 | Autenticación y RBAC |
 | **ms-agents** | 3040 | Agentes e IA (chatbot) |
 | **ms-customers** | 3000 | Clientes / tenants |
+| **ms-leads** | 3150 | Gia Leads (segunda puerta del chat) |
 | **bff-globaloffice** | 3060 | BFF para Global Office |
 | **bff-backoffice** | 3080 | BFF para Backoffice |
 | **bff-frontoffice** | 3110 | BFF para Front Office |
@@ -27,7 +28,39 @@ Este BFF usa un sistema de Hot Refresh dentro de Docker.
 2. Copiar `docker-compose.override.example.yaml` a `docker-compose.override.yaml`.
 3. Ejecutar `docker-compose up -d --build`.
 
-La red `coolify` es externa; debe existir previamente (la crea el orquestador Coolify). Redis y los microservicios upstream se consumen por DNS interno (`redis-global-gia-dev`, `ms-auth-gia-dev`, `ms-agents-gia-dev`, `ms-customers-gia-dev`).
+La red `coolify` es externa; debe existir previamente (la crea el orquestador Coolify). Redis y los microservicios upstream se consumen por DNS interno (`redis-global-gia-dev`, `ms-auth-gia-dev`, `ms-agents-gia-dev`, `ms-customers-gia-dev`, `ms-leads-gia-dev`).
+
+## 💬 El chat del widget
+
+`POST /v1/chat/create-chat` — **el único endpoint que consume `<chat-float>`**.
+
+```
+headers: unique-tenant-token · ip-address
+body:    { message, uniqueTenantToken, agentId?, chatSessionId?, ipAddress?, visitorId? }
+```
+
+**Hay dos puertas y las elige el BFF** (SPEC-167 · ADR-034). Antes de atender
+consulta `GET /v1/agents/:id/widget-config` de ms-agents (SPEC-162), lo memoriza
+por agente durante `BFF_CACHE_DEFAULT_TTL`, y según el interruptor:
+
+- `leadsEnabled: false`, sin `agentId`, sin `visitorId`, o **si la consulta
+  falla** → ms-agents, exactamente como siempre.
+- `leadsEnabled: true` → `POST /v1/widget/mensaje` de ms-leads, con la
+  organización en `x-tenant-id` (sale de `widget-config`: este BFF tiene un
+  *token* de organización, no su identificador).
+
+**La respuesta tiene la misma forma por las dos puertas** — `200 text/plain` con
+el texto — para que el componente que ya existe siga sirviendo:
+
+| | ms-agents | ms-leads |
+| :--- | :--- | :--- |
+| cuerpo | el texto, servido según se escribe | el texto, entero de una vez |
+| `Chat-Session-Id` | la sesión de ms-agents | *(no se emite)* |
+| `Contact-Form-Url` | *(no se emite)* | el formulario del tenant, sólo si hubo derivación (RF-020) |
+
+En error: `{ success: false, message }` — `message` es lo que el widget enseña a
+quien escribe. Las dos cabeceras nuevas van en `exposedHeaders` del CORS; sin
+eso el navegador no deja al widget leerlas.
 
 ## 🩺 Health
 
