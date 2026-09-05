@@ -2,11 +2,12 @@
 // restringe typeRoots, así que "vitest/globals" no resuelve como tipo.
 import { describe, expect, it } from "vitest";
 
-import {
-  CABECERA_DE_FOTOS,
-  TOPE_DE_LA_CABECERA,
-  codificarFotos,
-} from "../fotos-en-cabecera";
+import { RESERVA_POR_CABECERA } from "../apartados-en-cabecera";
+import { CABECERA_DE_FOTOS, codificarFotos } from "../fotos-en-cabecera";
+
+// SPEC-188: el tope pasó a ser la reserva compartida. El nombre cambia de sitio,
+// no de sentido, y la prueba de abajo sigue diciendo lo mismo.
+const TOPE_DE_LA_CABECERA = RESERVA_POR_CABECERA;
 
 /**
  * SPEC-183 — las fotos hacia el navegador, codificadas para una cabecera.

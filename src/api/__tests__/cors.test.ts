@@ -39,11 +39,16 @@ describe("SPEC-183 · el navegador puede leer lo que le mandamos", () => {
     expect(cabecerasExpuestas()).toContain("Chat-Photos");
   });
 
+  it("los ficheros van en su propia cabecera, también declarada", () => {
+    expect(cabecerasExpuestas()).toContain("Chat-Files");
+  });
+
   it("y las que ya se exponían siguen expuestas", () => {
     // La sesión del camino de ms-agents y el formulario del de ms-leads: si una
     // de las dos se cae de la lista, el widget deja de verla sin ningún error.
     const expuestas = cabecerasExpuestas();
     expect(expuestas).toContain("Chat-Session-Id");
     expect(expuestas).toContain("Contact-Form-Url");
+    expect(expuestas).toContain("Chat-Photos");
   });
 });

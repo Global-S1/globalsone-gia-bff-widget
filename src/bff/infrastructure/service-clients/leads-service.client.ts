@@ -54,6 +54,22 @@ export interface IRespuestaDeLeads {
    * nula: verificado en `ms-leads/src/orquestador.ts`.
    */
   readonly fotos: readonly string[];
+  /**
+   * Los ficheros que el agente apartó, **en el orden en que los apartó**
+   * (SPEC-186 · RF-022 · ADR-035).
+   *
+   * Cada uno con el `titulo` con el que el tenant lo dio de alta —que es lo que
+   * va a leer quien escribe— y una `llave` con la que se piden sus bytes al
+   * proxy (SPEC-187). **La llave no es el identificador del documento**, y ésa
+   * es toda la razón de que exista: con el identificador interno, cualquiera
+   * que lo tuviera se descargaría el recurso de cualquier tenant.
+   *
+   * El peso no viaja: sólo se sabría descargando el fichero entero.
+   *
+   * **Siempre presente y vacía cuando no hay ninguno**: verificado en
+   * `ms-leads/src/orquestador.ts`.
+   */
+  readonly ficheros: readonly { readonly titulo: string; readonly llave: string }[];
   readonly derivada: boolean;
   /** La dirección del formulario del tenant, sólo cuando hay derivación (RF-020). */
   readonly formularioDeContacto: string | null;

@@ -7,6 +7,7 @@ import { appConsole } from "./entities/shared/infraestructure/utils/app-console"
 import { StatusCodes } from "./entities/shared/infraestructure/lib/http-status-codes";
 import { correlationIdMiddleware } from "./api/middlewares/correlation-id.middleware";
 import { CABECERA_DE_FOTOS } from "./api/controllers/fotos-en-cabecera";
+import { CABECERA_DE_FICHEROS } from "./api/controllers/ficheros-en-cabecera";
 import { api } from "./api/api";
 
 export function server(): Express {
@@ -43,6 +44,8 @@ export function server(): Express {
         // modulo que las pone, no de un literal repetido: dos literales se
         // separan con el tiempo y la cabecera se volveria invisible sin error.
         CABECERA_DE_FOTOS,
+        // SPEC-188 · RF-022: los ficheros que aparto, con su titulo y su llave.
+        CABECERA_DE_FICHEROS,
       ],
     })
   );
