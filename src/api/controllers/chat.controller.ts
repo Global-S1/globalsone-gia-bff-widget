@@ -13,6 +13,10 @@ import {
   CABECERA_DE_FOTOS,
   codificarFotos,
 } from "./fotos-en-cabecera";
+import {
+  CABECERA_DE_FICHEROS,
+  codificarFicheros,
+} from "./ficheros-en-cabecera";
 
 /**
  * POST /v1/chat/create-chat
@@ -40,6 +44,8 @@ import {
  *     formulario configurado (RF-020).
  *   · `Chat-Photos`: las fotos que el agente señaló, codificadas (SPEC-183).
  *     Sólo por el camino de ms-leads y sólo cuando hay alguna.
+ *   · `Chat-Files`: los ficheros que apartó, con su título y su llave, también
+ *     codificados (SPEC-188). Mismas condiciones.
  *   · 4xx/5xx: JSON `{ success, message }` — `message` es lo que el widget
  *     enseña a quien escribe.
  */
@@ -251,6 +257,10 @@ async function atenderPorLeads(
   // texto que lee quien escribe. Si no cabe ninguna se manda el texto sin
   // ellas: antes menos fotos que dejar al visitante sin respuesta.
   const fotos = codificarFotos(respuesta.data.fotos);
+  // SPEC-188: y sus hermanos, los ficheros. Cada cabecera tiene su reserva del
+  // presupuesto compartido, así que un turno con muchas fotos no puede apagar
+  // en silencio el fichero que el agente acaba de prometer.
+  const ficheros = codificarFicheros(respuesta.data.ficheros);
 
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, no-transform");
@@ -259,6 +269,9 @@ async function atenderPorLeads(
   }
   if (fotos) {
     res.setHeader(CABECERA_DE_FOTOS, fotos);
+  }
+  if (ficheros) {
+    res.setHeader(CABECERA_DE_FICHEROS, ficheros);
   }
   res.status(StatusCodes.OK);
   // `texto: null` es un estado terminal de la conversación, no un fallo: ahí no

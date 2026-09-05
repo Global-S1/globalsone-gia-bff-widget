@@ -27,6 +27,7 @@ vi.mock("../../../bff/infrastructure/service-clients/leads-service.client", () =
 import { createChat } from "../chat.controller";
 import { limpiarCacheDeConfiguracionDeWidget } from "../../../bff/infrastructure/cache/widget-config.cache";
 import { logger } from "../../../entities/shared/infraestructure/utils/logger";
+import { PRESUPUESTO_DE_CABECERAS } from "../apartados-en-cabecera";
 
 const AGENTE = "agente-1";
 const ORGANIZACION = "org-1";
@@ -128,6 +129,8 @@ function respuestaDeLeads(extra: Record<string, unknown> = {}) {
       // SPEC-182: **siempre presente y vacía cuando no hay ninguna**, nunca
       // ausente y nunca nula. Verificado en `ms-leads/src/orquestador.ts`.
       fotos: [] as string[],
+      // SPEC-186: igual — siempre presente, vacía cuando no hay ninguno.
+      ficheros: [] as { titulo: string; llave: string }[],
       derivada: false,
       formularioDeContacto: null,
       ...extra,
@@ -662,6 +665,151 @@ describe("SPEC-183 · las fotos hacia el navegador", () => {
     expect(createChatStream).toHaveBeenCalledTimes(1);
     expect(res.cabeceras["Chat-Photos"]).toBeUndefined();
     expect(res.cabeceras["Chat-Session-Id"]).toBe("sesion-1");
+    await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+  });
+});
+
+
+// ── SPEC-188 ────────────────────────────────────────────────────────────────
+
+/** Lo que hará el widget con la cabecera hermana de `Chat-Photos`. */
+function ficherosQueLeeElNavegador(
+  res: RespuestaFalsa,
+): { titulo: string; llave: string }[] | undefined {
+  const valor = res.cabeceras["Chat-Files"];
+  if (valor === undefined) return undefined;
+  return JSON.parse(Buffer.from(valor, "base64").toString("utf8"));
+}
+
+/** 43 caracteres de `[A-Za-z0-9_-]`: 256 bits en base64url (SPEC-186). */
+const UNA_LLAVE = "3pQ7x1Kb9vZ2mN4tR8sL0dF6hJ5wY7cA1eG3iU9oP2k";
+const OTRA_LLAVE = "Zm9vYmFyYmF6cXV4MDEyMzQ1Njc4OWFiY2RlZmdoaWo";
+
+describe("SPEC-188 · los ficheros hacia el navegador", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    limpiarCacheDeConfiguracionDeWidget();
+    createChatStream.mockResolvedValue(respuestaDeAgents());
+    // Un agente con la clasificación de leads encendida.
+    getWidgetConfig.mockResolvedValue(configuracion(true));
+  });
+
+  it("Los ficheros llegan al widget", async () => {
+    atenderMensajeDelWidget.mockResolvedValue(
+      respuestaDeLeads({
+        texto: "Te dejo las tarifas y el catálogo.",
+        ficheros: [
+          { titulo: "Tarifas 2026", llave: UNA_LLAVE },
+          { titulo: "Catálogo", llave: OTRA_LLAVE },
+        ],
+      }),
+    );
+    const res = respuesta();
+
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
+
+    // Los dos, con su título y su llave, en su orden.
+    expect(ficherosQueLeeElNavegador(res)).toEqual([
+      { titulo: "Tarifas 2026", llave: UNA_LLAVE },
+      { titulo: "Catálogo", llave: OTRA_LLAVE },
+    ]);
+    // Y el cuerpo sigue siendo sólo el texto del agente.
+    await expect(res.cuerpo()).resolves.toBe("Te dejo las tarifas y el catálogo.");
+    expect(res.cabeceras["Content-Type"]).toBe("text/plain; charset=utf-8");
+  });
+
+  it("Sin ficheros no se manda nada de esto", async () => {
+    atenderMensajeDelWidget.mockResolvedValue(respuestaDeLeads({ ficheros: [] }));
+    const res = respuesta();
+
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
+
+    expect(res.cabeceras["Chat-Files"]).toBeUndefined();
+    await expect(res.cuerpo()).resolves.toBe("respuesta desde leads");
+  });
+
+  it("Un título con acentos llega entero", async () => {
+    // El título lo escribe el tenant, así que esto es el caso normal y no el
+    // raro: una «ñ» cruda en una cabecera hace que Node rechace la respuesta
+    // entera, y quien escribe se quedaría sin texto por culpa de un adjunto.
+    atenderMensajeDelWidget.mockResolvedValue(
+      respuestaDeLeads({
+        ficheros: [{ titulo: "Catálogo de otoño", llave: UNA_LLAVE }],
+      }),
+    );
+    const res = respuesta();
+
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
+
+    expect(ficherosQueLeeElNavegador(res)).toEqual([
+      { titulo: "Catálogo de otoño", llave: UNA_LLAVE },
+    ]);
+    expect(res.codigo).toBe(200);
+  });
+
+  it("Una lista demasiado grande no rompe la respuesta", async () => {
+    const titulo = "Catálogo de otoño ".repeat(20);
+    atenderMensajeDelWidget.mockResolvedValue(
+      respuestaDeLeads({
+        texto: "Ahí van.",
+        ficheros: Array.from({ length: 30 }, (_, i) => ({
+          titulo: `${titulo}${i}`,
+          llave: UNA_LLAVE,
+        })),
+      }),
+    );
+    const res = respuesta();
+
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
+
+    const entregados = ficherosQueLeeElNavegador(res)!;
+    expect(entregados.length).toBeGreaterThan(0);
+    expect(entregados.length).toBeLessThan(30);
+    // Y el texto sale igual.
+    expect(res.codigo).toBe(200);
+    await expect(res.cuerpo()).resolves.toBe("Ahí van.");
+  });
+
+  it("Las fotos y los ficheros a la vez no se pasan del presupuesto", async () => {
+    // **Esto es lo que cambia respecto a SPEC-183**: antes había UNA cabecera
+    // que podía crecer, ahora hay dos. El límite que importa no es el de cada
+    // una, es el bloque entero: el nginx de en medio no recorta, tira la
+    // respuesta con un 502.
+    const largo = `https://cdn.acme.example/catalogo/${"a".repeat(300)}.jpg`;
+    const titulo = "Catálogo de otoño ".repeat(20);
+    atenderMensajeDelWidget.mockResolvedValue(
+      respuestaDeLeads({
+        texto: "Todo junto.",
+        fotos: Array.from({ length: 40 }, (_, i) => `${largo}?n=${i}`),
+        ficheros: Array.from({ length: 30 }, (_, i) => ({
+          titulo: `${titulo}${i}`,
+          llave: UNA_LLAVE,
+        })),
+      }),
+    );
+    const res = respuesta();
+
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
+
+    const juntas =
+      res.cabeceras["Chat-Photos"]!.length + res.cabeceras["Chat-Files"]!.length;
+    expect(juntas).toBeLessThanOrEqual(PRESUPUESTO_DE_CABECERAS);
+    // Y ninguna de las dos se queda a cero por culpa de la otra: cada una tiene
+    // su reserva, así que un turno con muchas fotos no apaga los ficheros.
+    expect(ficherosQueLeeElNavegador(res)!.length).toBeGreaterThan(0);
+    expect(fotosQueLeeElNavegador(res)!.length).toBeGreaterThan(0);
+    await expect(res.cuerpo()).resolves.toBe("Todo junto.");
+  });
+
+  it("El camino de siempre no cambia", async () => {
+    getWidgetConfig.mockResolvedValue(configuracion(false));
+    const res = respuesta();
+
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
+
+    expect(createChatStream).toHaveBeenCalledTimes(1);
+    expect(res.cabeceras["Chat-Files"]).toBeUndefined();
+    expect(res.cabeceras["Chat-Photos"]).toBeUndefined();
     await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
   });
 });

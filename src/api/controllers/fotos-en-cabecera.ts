@@ -27,7 +27,15 @@
  * que hace falta garantizar. Es exactamente lo que ya hace `codificarAdjuntos`
  * en ms-agents (SPEC-084) para el mismo problema, y por eso la cabecera se
  * llama como su hermana: `Chat-Resources` allí, `Chat-Photos` aquí.
+ *
+ * Desde SPEC-188 **la codificación y el tope no viven aquí**: los comparte con
+ * `Chat-Files`, porque el límite que importa nunca fue el de una cabecera sino
+ * el del bloque entero. Ver `apartados-en-cabecera.ts`.
  */
+import {
+  RESERVA_POR_CABECERA,
+  codificarParaCabecera,
+} from "./apartados-en-cabecera";
 
 /**
  * El nombre literal de la cabecera. **El widget construye contra esto**, así
@@ -36,26 +44,6 @@
  * tiempo.
  */
 export const CABECERA_DE_FOTOS = "Chat-Photos";
-
-/**
- * Lo que puede medir el valor de la cabecera, en caracteres (que son bytes:
- * base64 es ASCII).
- *
- * **No es un número elegido por prudencia genérica.** Entre este servicio y el
- * navegador hay un nginx (`api-gateway/conf.d/widget.conf`) que lee la cabecera
- * de la respuesta dentro de un buffer de tamaño fijo, `proxy_buffer_size`, que
- * ahí no está tocado y por tanto vale su valor por defecto: 4 KB. Si el bloque
- * entero de cabeceras se pasa, nginx no recorta nada — tira la respuesta y
- * devuelve un 502, y quien escribe se queda **sin el texto** por culpa de una
- * foto. `proxy_buffering off` no ayuda: eso afecta al cuerpo, no a la cabecera.
- *
- * 2000 deja la otra mitad del buffer para todo lo demás —`Content-Type`,
- * `Cache-Control`, `Contact-Form-Url`, `X-Correlation-ID`, las que añade el
- * propio nginx— con margen de sobra. Y da para más fotos de las que un turno
- * va a traer: el tope por turno vive en ms-agents (RF-021) y aquí no se
- * inventa otro.
- */
-export const TOPE_DE_LA_CABECERA = 2000;
 
 /**
  * Una dirección que se le puede entregar al navegador, normalizada, o nada.
@@ -86,10 +74,6 @@ function direccionQueSePuedeEntregar(direccion: unknown): string | null {
   }
 }
 
-function codificar(direcciones: readonly string[]): string {
-  return Buffer.from(JSON.stringify(direcciones), "utf8").toString("base64");
-}
-
 /**
  * Las fotos listas para ponerse en la cabecera, o `null` cuando no hay ninguna
  * que entregar.
@@ -112,22 +96,12 @@ function codificar(direcciones: readonly string[]): string {
  */
 export function codificarFotos(
   fotos: readonly string[] | undefined,
-  tope: number = TOPE_DE_LA_CABECERA
+  tope: number = RESERVA_POR_CABECERA
 ): string | null {
   const entregables: string[] = [];
   for (const foto of fotos ?? []) {
     const direccion = direccionQueSePuedeEntregar(foto);
     if (direccion !== null) entregables.push(direccion);
   }
-  if (entregables.length === 0) return null;
-
-  let cabidas = entregables;
-  let valor = codificar(cabidas);
-  while (cabidas.length > 0 && valor.length > tope) {
-    cabidas = cabidas.slice(0, -1);
-    valor = codificar(cabidas);
-  }
-
-  // Ni una cabía: mejor sin fotos que sin respuesta.
-  return cabidas.length === 0 ? null : valor;
+  return codificarParaCabecera(entregables, tope);
 }
