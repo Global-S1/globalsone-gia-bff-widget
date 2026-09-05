@@ -29,6 +29,29 @@ import { logger } from "../../entities/shared/infraestructure/utils/logger";
  *     documento ni el de la organización, ni en las cabeceras ni en el cuerpo,
  *     ni siquiera al fallar. Entra una llave y salen bytes.
  *
+ * ## Y por qué sus errores no son JSON
+ *
+ * **Esta ruta se alcanza pinchando un enlace.** Lo que hay al otro lado es una
+ * pestaña del navegador de quien conversa, no un cliente que vaya a interpretar
+ * un objeto: de una navegación no se puede leer ni el estado ni el cuerpo, así
+ * que el widget **no puede avisar por su cuenta** —la alternativa era bufferear
+ * el fichero entero en la memoria de quien lee, o dos peticiones por descarga
+ * con su carrera—. Lo que esa persona ve es, literalmente, lo que conteste este
+ * fichero.
+ *
+ * Así que un fallo sale como **una frase en texto plano**, no como
+ * `{"success":false,…}`. Eso último es decírselo; esto es avisarle.
+ *
+ * ## Lo que NO lleva: cuota
+ *
+ * Una descarga **no gasta cuota de conversación**, y no es un olvido (SPEC-187):
+ * bajarse un fichero tres veces no es hablar tres veces con el modelo. Lo que
+ * queda expuesto no es ningún dato —la llave sigue siendo imposible de
+ * adivinar— sino ancho de banda, que es un riesgo que ADR-035 ya aceptó al
+ * decidir que el enlace no caduca. El día que ese tráfico moleste, lo que hará
+ * falta es **un límite propio de esta ruta con su propia decisión**, no el
+ * contador de mensajes estirado hasta aquí.
+ *
  * ## Lo que este proxy da por bueno
  *
  * Al acuñar la llave, ms-leads **no comprueba** que el documento pertenezca a
@@ -46,6 +69,10 @@ import { logger } from "../../entities/shared/infraestructure/utils/logger";
  * Escrito aquí y no traído del error: lo que devuelve un servicio interno puede
  * traer dentro detalles de nuestra configuración, y esto lo lee alguien en una
  * página que no controlamos.
+ *
+ * **Se lee tal cual, en una pestaña del navegador**, así que está escrito para
+ * una persona y no para un programa. Son constantes sin nada de nadie dentro:
+ * no hay eco de la petición ni de lo que dijo el servicio de dentro.
  */
 const NO_TE_PUEDO_DAR_EL_FICHERO =
   "No he podido darte ese fichero ahora mismo. Vuelve a intentarlo en un momento.";
@@ -176,13 +203,28 @@ export async function descargarFichero(
 }
 
 function noEsta(res: Response): void {
-  res.status(StatusCodes.NOT_FOUND).json({ success: false, message: NO_ESTA });
+  enPalabras(res, StatusCodes.NOT_FOUND, NO_ESTA);
 }
 
 function noTePuedoAtender(res: Response): void {
-  res
-    .status(StatusCodes.BAD_GATEWAY)
-    .json({ success: false, message: NO_TE_PUEDO_DAR_EL_FICHERO });
+  enPalabras(res, StatusCodes.BAD_GATEWAY, NO_TE_PUEDO_DAR_EL_FICHERO);
+}
+
+/**
+ * Un fallo, escrito para que lo lea quien pinchó el enlace.
+ *
+ * `charset=utf-8` no es de adorno: las dos frases llevan acentos, y sin él hay
+ * navegadores que las pintan rotas — un aviso ilegible sobre un enlace que no
+ * bajó nada se lee como una avería más, que es lo contrario de lo que se busca.
+ *
+ * Y **sin** `**Content-Disposition**`: esto se lee en la pestaña, no se guarda.
+ * Descargar un fichero llamado «Tarifas 2026» que por dentro dice «ya no está
+ * disponible» sería peor que no dar nada.
+ */
+function enPalabras(res: Response, codigo: number, frase: string): void {
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.status(codigo);
+  res.end(frase);
 }
 
 /** El tipo que dijo ms-documents, o bytes sin más. */

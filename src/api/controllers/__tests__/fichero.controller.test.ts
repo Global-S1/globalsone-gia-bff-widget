@@ -15,6 +15,13 @@ import type { Request } from "express";
  * internet: quien escribe por el widget es anónimo y no va a tener sesión
  * nunca, así que **la llave ES la autorización**.
  *
+ * **Y sus errores se escriben para que los lea una persona.** Esta ruta se
+ * alcanza pinchando un enlace: al otro lado hay una pestaña del navegador de
+ * quien conversa, no un programa que vaya a interpretar un objeto. De una
+ * navegación no se puede leer ni el estado ni el cuerpo, así que el widget no
+ * puede avisar por su cuenta: lo que esa persona ve es literalmente lo que
+ * conteste este fichero.
+ *
  * Cada `it` es un escenario del Gherkin del SPEC, con su nombre.
  */
 
@@ -176,6 +183,85 @@ describe("SPEC-187 · descargar un fichero del agente", () => {
     const todo = JSON.stringify(res.cabeceras) + (await res.cuerpo());
     expect(todo).not.toContain(DOCUMENTO);
     expect(todo).not.toContain(ORGANIZACION);
+  });
+
+  it("Y tampoco lo dice al fallar, ahora que el cuerpo es otro", async () => {
+    // La misma comprobación sobre la respuesta legible: cambiar la envoltura no
+    // puede colar por el cuerpo nuevo lo que el anterior no dejaba salir.
+    obtenerFichero.mockResolvedValue({
+      statusCode: 500,
+      headers: { "content-type": "application/json" },
+      body: Readable.from([`{"organizacionId":"${ORGANIZACION}"}`]),
+    });
+    const res = respuestaFalsa();
+
+    await descargarFichero(peticion(), comoRespuesta(res));
+
+    const todo = JSON.stringify(res.cabeceras) + (await res.cuerpo());
+    expect(todo).not.toContain(DOCUMENTO);
+    expect(todo).not.toContain(ORGANIZACION);
+  });
+
+  it("Un fichero que ya no está se dice con palabras", async () => {
+    obtenerFichero.mockResolvedValue({
+      statusCode: 404,
+      headers: { "content-type": "application/json" },
+      body: Readable.from(['{"error":"no está"}']),
+    });
+    const res = respuestaFalsa();
+
+    await descargarFichero(peticion(), comoRespuesta(res));
+
+    // Lo que se lee es una frase, no un objeto con llaves y comillas.
+    const cuerpo = await res.cuerpo();
+    expect(cuerpo).toBe("Ese fichero ya no está disponible.");
+    expect(cuerpo).not.toContain("{");
+    expect(cuerpo).not.toContain('"');
+    expect(res.cabeceras["Content-Type"]).toBe("text/plain; charset=utf-8");
+  });
+
+  it("Una llave que no existe también se dice con palabras", async () => {
+    resolverLlaveDeFichero.mockResolvedValue({
+      success: false,
+      statusCode: 404,
+      duration: 1,
+      error: { code: "404", message: "Esa llave no existe", service: "ms-leads" },
+    });
+    const res = respuestaFalsa();
+
+    await descargarFichero(peticion(), comoRespuesta(res));
+
+    expect(await res.cuerpo()).toBe("Ese fichero ya no está disponible.");
+  });
+
+  it("Y un fallo nuestro también, con su propia frase", async () => {
+    // Un 502 no es «no existe»: se le dice que vuelva a intentarlo, porque el
+    // enlace sigue siendo bueno. Y también en palabras.
+    resolverLlaveDeFichero.mockRejectedValue(new Error("boom"));
+    const res = respuestaFalsa();
+
+    await descargarFichero(peticion(), comoRespuesta(res));
+
+    expect(await res.cuerpo()).toBe(
+      "No he podido darte ese fichero ahora mismo. Vuelve a intentarlo en un momento.",
+    );
+    expect(res.cabeceras["Content-Type"]).toBe("text/plain; charset=utf-8");
+  });
+
+  it("Un error no se descarga: se lee en la pestaña", async () => {
+    // Sin `Content-Disposition`. Guardar un fichero llamado «Tarifas 2026» que
+    // por dentro dice «ya no está disponible» es peor que no dar nada.
+    resolverLlaveDeFichero.mockResolvedValue({
+      success: false,
+      statusCode: 404,
+      duration: 1,
+      error: { code: "404", message: "Esa llave no existe", service: "ms-leads" },
+    });
+    const res = respuestaFalsa();
+
+    await descargarFichero(peticion(), comoRespuesta(res));
+
+    expect(res.cabeceras["Content-Disposition"]).toBeUndefined();
   });
 
   it("Un 404 tampoco cuenta nada de lo que hay detrás", async () => {
