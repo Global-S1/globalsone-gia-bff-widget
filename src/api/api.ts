@@ -3,6 +3,7 @@ import { StatusCodes } from "../entities/shared/infraestructure/lib/http-status-
 import { env } from "../entities/shared/infraestructure/config/environments";
 import { getServicesHealth } from "../bff/infrastructure/config/backend-services.config";
 import { chatRoutes } from "./routes/chat.routes";
+import { ficheroRoutes } from "./routes/fichero.routes";
 
 export function api(): Router {
   const router = Router();
@@ -99,6 +100,11 @@ export function api(): Router {
   // Chat del widget → ms-agents (streaming passthrough). Público: la identidad
   // de organización viaja en el header/body como unique-tenant-token.
   router.use("/chat", chatRoutes());
+
+  // SPEC-187 · ADR-035 — los bytes de un recurso del agente, por su llave.
+  // Publica y SIN credencial: quien escribe por el widget es anonimo y lo que
+  // autoriza es la llave. La ruta de ms-documents sigue cerrada a internet.
+  router.use("/fichero", ficheroRoutes());
 
   return router;
 }

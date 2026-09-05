@@ -40,9 +40,50 @@ export interface IRespuestaDeLeads {
     readonly correo: string | null;
     readonly telefono: string | null;
   };
+  /**
+   * Las fotos que el agente señaló, **en el orden en que las señaló**
+   * (SPEC-182 · RF-021 · ADR-035).
+   *
+   * Son **direcciones y no ficheros**: una foto que el agente señala no es algo
+   * nuestro, es una `https` que ya vivía en internet —la del catálogo del
+   * tenant— y la pinta el navegador de quien escribe. Sus bytes no pasan por
+   * aquí, y traerlos por dentro nos costaría ancho de banda para no mejorar
+   * nada (ADR-035).
+   *
+   * **Siempre presente y vacía cuando no hay ninguna**, nunca ausente y nunca
+   * nula: verificado en `ms-leads/src/orquestador.ts`.
+   */
+  readonly fotos: readonly string[];
+  /**
+   * Los ficheros que el agente apartó, **en el orden en que los apartó**
+   * (SPEC-186 · RF-022 · ADR-035).
+   *
+   * Cada uno con el `titulo` con el que el tenant lo dio de alta —que es lo que
+   * va a leer quien escribe— y una `llave` con la que se piden sus bytes al
+   * proxy (SPEC-187). **La llave no es el identificador del documento**, y ésa
+   * es toda la razón de que exista: con el identificador interno, cualquiera
+   * que lo tuviera se descargaría el recurso de cualquier tenant.
+   *
+   * El peso no viaja: sólo se sabría descargando el fichero entero.
+   *
+   * **Siempre presente y vacía cuando no hay ninguno**: verificado en
+   * `ms-leads/src/orquestador.ts`.
+   */
+  readonly ficheros: readonly { readonly titulo: string; readonly llave: string }[];
   readonly derivada: boolean;
   /** La dirección del formulario del tenant, sólo cuando hay derivación (RF-020). */
   readonly formularioDeContacto: string | null;
+}
+
+/**
+ * De quién es la llave con la que sale un fichero del widget (SPEC-186).
+ *
+ * **Sólo dice a qué organización y a qué documento pertenece.** Los bytes los
+ * sirve este BFF (SPEC-187): la ruta de ms-documents no se abre a internet.
+ */
+export interface ILlaveDeFichero {
+  readonly organizacionId: string;
+  readonly documentoId: string;
 }
 
 /**
@@ -89,6 +130,39 @@ export class LeadsServiceClient extends BaseServiceClient {
       // petición con esa cabecera repetida —Node une las repetidas con comas y
       // una conversación con dueño «uuid, uuid» queda atrapada—. Quien escribe
       // por el widget no es un usuario del tenant: no hay identidad que mandar.
+      { correlationId: context.correlationId, timestamp: context.timestamp }
+    );
+  }
+
+  /**
+   * SPEC-186 · SPEC-187 — de quién es esta llave.
+   *
+   * **Es la única ruta de ms-leads que NO lleva** `**x-tenant-id**`, y no por
+   * descuido: quien presenta una llave viene justo a preguntar de qué
+   * organización es, así que exigirle ese dato sería pedirle el que viene a
+   * buscar. El token interno sí va, igual que en todas.
+   *
+   * Y no distingue «no existe» de «no es tuya», porque no hay tuya: la llave es
+   * la autorización, y una que no está es un 404 para todo el mundo.
+   */
+  async resolverLlaveDeFichero(
+    llave: string,
+    context: IRequestContext
+  ): Promise<IServiceResponse<ILlaveDeFichero>> {
+    return this.request<ILlaveDeFichero>(
+      {
+        method: "GET",
+        path: `/v1/widget/fichero/${encodeURIComponent(llave)}`,
+        // Una lectura, y va delante de una descarga que alguien espera: un
+        // reintento por si el primero se cruza con un reinicio, y no más.
+        retries: 1,
+        timeout: 3000,
+        headers: {
+          "x-internal-service-token": env.internalServiceToken ?? "",
+        },
+      },
+      // Podado igual que el mensaje del widget: quien pide un fichero por su
+      // llave no es un usuario del tenant, y `X-User-ID` duplicada rompe.
       { correlationId: context.correlationId, timestamp: context.timestamp }
     );
   }

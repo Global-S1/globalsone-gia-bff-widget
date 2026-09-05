@@ -132,6 +132,12 @@ export const ServiceKeys = {
    * yendo a AGENTS.
    */
   LEADS: "leads",
+  /**
+   * SPEC-187 · ADR-035 — de donde salen los bytes de un recurso del agente.
+   * Sólo lo usa el proxy del fichero: su ruta no se abre a internet, y este
+   * servicio es quien va a buscarlos con el token de servicio.
+   */
+  DOCUMENTS: "documents",
 } as const;
 
 export type ServiceKey = (typeof ServiceKeys)[keyof typeof ServiceKeys];
