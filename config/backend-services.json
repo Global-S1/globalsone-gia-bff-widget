@@ -21,6 +21,13 @@
       "retries": 2,
       "healthPath": "/v1/health"
     },
+    "documents": {
+      "name": "ms-documents",
+      "baseUrl": "${MS_DOCUMENTS_URL}",
+      "timeout": 5000,
+      "retries": 2,
+      "healthPath": "/health"
+    },
     "leads": {
       "name": "ms-leads",
       "baseUrl": "${MS_LEADS_URL}",

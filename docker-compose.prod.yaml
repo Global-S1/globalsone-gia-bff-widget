@@ -17,6 +17,7 @@ services:
       - MS_AGENTS_URL=${MS_AGENTS_URL:-http://ms-agents-gia-prod:3040}
       - MS_CUSTOMERS_URL=${MS_CUSTOMERS_URL:-http://ms-customers-gia-prod:3000}
       # SPEC-167 - la segunda puerta del mensaje del widget (ADR-034).
+      - MS_DOCUMENTS_URL=${MS_DOCUMENTS_URL:-http://ms-documents-gia-prod:3050}
       - MS_LEADS_URL=${MS_LEADS_URL:-http://ms-leads-gia-prod:3150}
       - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
     networks:

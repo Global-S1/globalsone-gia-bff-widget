@@ -60,6 +60,17 @@ export interface IRespuestaDeLeads {
 }
 
 /**
+ * De quién es la llave con la que sale un fichero del widget (SPEC-186).
+ *
+ * **Sólo dice a qué organización y a qué documento pertenece.** Los bytes los
+ * sirve este BFF (SPEC-187): la ruta de ms-documents no se abre a internet.
+ */
+export interface ILlaveDeFichero {
+  readonly organizacionId: string;
+  readonly documentoId: string;
+}
+
+/**
  * Cliente HTTP hacia ms-leads. La segunda puerta del widget (ADR-034).
  *
  * Lo que autoriza es el mismo secreto compartido que ya usa el camino de
@@ -103,6 +114,39 @@ export class LeadsServiceClient extends BaseServiceClient {
       // petición con esa cabecera repetida —Node une las repetidas con comas y
       // una conversación con dueño «uuid, uuid» queda atrapada—. Quien escribe
       // por el widget no es un usuario del tenant: no hay identidad que mandar.
+      { correlationId: context.correlationId, timestamp: context.timestamp }
+    );
+  }
+
+  /**
+   * SPEC-186 · SPEC-187 — de quién es esta llave.
+   *
+   * **Es la única ruta de ms-leads que NO lleva** `**x-tenant-id**`, y no por
+   * descuido: quien presenta una llave viene justo a preguntar de qué
+   * organización es, así que exigirle ese dato sería pedirle el que viene a
+   * buscar. El token interno sí va, igual que en todas.
+   *
+   * Y no distingue «no existe» de «no es tuya», porque no hay tuya: la llave es
+   * la autorización, y una que no está es un 404 para todo el mundo.
+   */
+  async resolverLlaveDeFichero(
+    llave: string,
+    context: IRequestContext
+  ): Promise<IServiceResponse<ILlaveDeFichero>> {
+    return this.request<ILlaveDeFichero>(
+      {
+        method: "GET",
+        path: `/v1/widget/fichero/${encodeURIComponent(llave)}`,
+        // Una lectura, y va delante de una descarga que alguien espera: un
+        // reintento por si el primero se cruza con un reinicio, y no más.
+        retries: 1,
+        timeout: 3000,
+        headers: {
+          "x-internal-service-token": env.internalServiceToken ?? "",
+        },
+      },
+      // Podado igual que el mensaje del widget: quien pide un fichero por su
+      // llave no es un usuario del tenant, y `X-User-ID` duplicada rompe.
       { correlationId: context.correlationId, timestamp: context.timestamp }
     );
   }
