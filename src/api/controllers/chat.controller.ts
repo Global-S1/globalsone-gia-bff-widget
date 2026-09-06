@@ -6,6 +6,7 @@ import {
   IRespuestaDeLeads,
 } from "../../bff/infrastructure/service-clients/leads-service.client";
 import { resolverWidget } from "../../bff/application/use-cases/widget-config.use-case";
+import { apuntarOrigen } from "../../bff/application/use-cases/apuntar-origen.use-case";
 import { IRequestContext } from "../../bff/domain/interfaces/request-context.interface";
 import { IServiceResponse } from "../../bff/domain/interfaces/service-response.interface";
 import { logger } from "../../entities/shared/infraestructure/utils/logger";
@@ -36,7 +37,8 @@ import {
  * que sostiene los fragmentos ya pegados en webs de clientes.
  *
  * Entrada (widget):
- *   headers: `unique-tenant-token`, `ip-address`
+ *   headers: `unique-tenant-token` (sólo compatibilidad), `ip-address`,
+ *            `Origin` (lo pone el navegador; se apunta su dominio, RF-025)
  *   body:    { message, widgetId?, uniqueTenantToken, agentId?, chatSessionId?,
  *              ipAddress?, visitanteId? }
  *
@@ -113,10 +115,14 @@ export async function createChat(req: Request, res: Response): Promise<void> {
   const visitanteId =
     typeof body.visitanteId === "string" ? body.visitanteId.trim() : "";
 
-  if (!uniqueToken) {
+  // **Hace falta con qué identificar la organización, y ya hay dos formas**
+  // (SPEC-195): el identificador del widget, del que se resuelve todo, o el
+  // token de organización del fragmento antiguo. Sin ninguno de los dos no hay
+  // a quién imputar la conversación ni contra qué cuota contarla.
+  if (!uniqueToken && !widgetId) {
     res.status(StatusCodes.UNAUTHORIZED).json({
       success: false,
-      message: "unique-tenant-token es requerido",
+      message: "widgetId o unique-tenant-token es requerido",
     });
     return;
   }
@@ -146,6 +152,9 @@ export async function createChat(req: Request, res: Response): Promise<void> {
   // El agente al que apuntar. Sale de la resolución en cuanto la haya, porque
   // con sólo `widgetId` el cuerpo no lo trae.
   let agenteDelWidget = agentId;
+  // Y la organización, que es la señal con la que se habla con ms-agents en
+  // cuanto sabemos quién es el widget (SPEC-203).
+  let organizacionDelWidget: string | undefined;
 
   if (identificador) {
     const resolucion = await resolverWidget(identificador, context);
@@ -161,6 +170,19 @@ export async function createChat(req: Request, res: Response): Promise<void> {
     if (resolucion.tipo === "resuelto") {
       const configuracion = resolucion.config;
       agenteDelWidget = configuracion.agentId;
+      organizacionDelWidget = configuracion.organizationId;
+
+      // **Desde dónde se está cargando** (RF-025 · ADR-038). Va aquí, en cuanto
+      // se sabe de qué widget es, y **antes de mirar si está activo**: lo que
+      // se observa es dónde está pegado el fragmento, y uno apagado sigue
+      // estando pegado — que es justamente lo que el tenant necesita ver.
+      //
+      // No se espera: es una observación, no parte de contestar.
+      apuntarOrigen(
+        configuracion.widgetId,
+        req.headers.origin as string | undefined,
+        context
+      );
 
       if (!configuracion.active) {
         // Un widget apagado no gasta modelo: se contesta antes de las dos
@@ -200,7 +222,11 @@ export async function createChat(req: Request, res: Response): Promise<void> {
 
   await atenderPorAgents(res, {
     message,
-    uniqueToken,
+    // Una señal y no dos (SPEC-203): la organización resuelta manda, y el token
+    // sólo se usa cuando no hemos podido resolver el widget.
+    ...(organizacionDelWidget
+      ? { organizacionId: organizacionDelWidget }
+      : { uniqueToken }),
     agentId: agenteDelWidget,
     chatPerUserId: chatSessionId,
     ipAddress,
@@ -215,7 +241,8 @@ async function atenderPorAgents(
   res: Response,
   params: {
     message: string;
-    uniqueToken: string;
+    organizacionId?: string;
+    uniqueToken?: string;
     agentId?: string;
     chatPerUserId?: string;
     ipAddress?: string;

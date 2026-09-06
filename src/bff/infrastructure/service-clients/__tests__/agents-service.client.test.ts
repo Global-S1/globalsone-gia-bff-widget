@@ -120,3 +120,84 @@ describe("AgentsServiceClient · la configuración de un widget", () => {
     expect(r.statusCode).toBe(404);
   });
 });
+
+describe("AgentsServiceClient · apuntar lo observado (SPEC-202)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    request.mockResolvedValue(respuestaJson(200, { success: true, data: { anotado: true } }));
+  });
+
+  it("apunta contra la ruta del widget", async () => {
+    await cliente().apuntarVisto("w-1", "tienda.example", contexto);
+
+    const [url, opciones] = request.mock.calls[0] as [string, Record<string, any>];
+    expect(url).toBe("http://ms-agents/v1/widgets/w-1/visto");
+    expect(opciones.method).toBe("POST");
+    expect(JSON.parse(opciones.body)).toEqual({ origin: "tienda.example" });
+  });
+
+  it("va con el token interno de servicio", async () => {
+    await cliente().apuntarVisto("w-1", "tienda.example", contexto);
+
+    const [, opciones] = request.mock.calls[0] as [string, Record<string, any>];
+    expect(opciones.headers["x-internal-service-token"]).toBe("secreto-compartido");
+  });
+
+  it("trae si escribió o si lo frenó", async () => {
+    request.mockResolvedValue(respuestaJson(200, { success: true, data: { anotado: false } }));
+
+    const r = await cliente().apuntarVisto("w-1", "tienda.example", contexto);
+
+    expect(r.data).toEqual({ anotado: false });
+  });
+
+  it("no se reintenta: es una observación, no una respuesta que alguien espera", async () => {
+    request.mockRejectedValue(new Error("boom"));
+
+    await cliente().apuntarVisto("w-1", "tienda.example", contexto);
+
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("AgentsServiceClient · el ámbito del chat (SPEC-203)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    request.mockResolvedValue({ statusCode: 200, headers: {}, body: {} });
+  });
+
+  it("con organización manda x-tenant-id y NO el token", async () => {
+    // SPEC-203: el canal del widget ya admite la organización, que es la regla
+    // de la casa. Mandar las dos señales cuando pueden discrepar es lo que
+    // ahora se rechaza, así que se manda una.
+    await cliente().createChatStream({
+      message: "hola",
+      organizacionId: "org-1",
+      agentId: "a-1",
+    });
+
+    const [, opciones] = request.mock.calls[0] as [string, Record<string, any>];
+    expect(opciones.headers["x-tenant-id"]).toBe("org-1");
+    expect(opciones.headers["x-unique-token"]).toBeUndefined();
+  });
+
+  it("sin organización sigue mandando el token, como hasta hoy", async () => {
+    await cliente().createChatStream({
+      message: "hola",
+      uniqueToken: "token-de-organizacion",
+      agentId: "a-1",
+    });
+
+    const [, opciones] = request.mock.calls[0] as [string, Record<string, any>];
+    expect(opciones.headers["x-unique-token"]).toBe("token-de-organizacion");
+    expect(opciones.headers["x-tenant-id"]).toBeUndefined();
+  });
+
+  it("el canal se declara igual por las dos vías", async () => {
+    await cliente().createChatStream({ message: "hola", organizacionId: "org-1" });
+
+    const [, opciones] = request.mock.calls[0] as [string, Record<string, any>];
+    expect(opciones.headers["x-channel"]).toBe("widget");
+    expect(opciones.headers["x-internal-service-token"]).toBe("secreto-compartido");
+  });
+});

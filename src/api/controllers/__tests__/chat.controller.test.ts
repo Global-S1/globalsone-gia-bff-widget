@@ -24,6 +24,11 @@ vi.mock("../../../bff/infrastructure/service-clients/leads-service.client", () =
   getLeadsServiceClient: () => ({ atenderMensajeDelWidget }),
 }));
 
+const apuntarOrigen = vi.fn();
+vi.mock("../../../bff/application/use-cases/apuntar-origen.use-case", () => ({
+  apuntarOrigen: (...args: unknown[]) => apuntarOrigen(...args),
+}));
+
 import { createChat } from "../chat.controller";
 import { limpiarCacheDeConfiguracionDeWidget } from "../../../bff/infrastructure/cache/widget-config.cache";
 import { logger } from "../../../entities/shared/infraestructure/utils/logger";
@@ -40,6 +45,15 @@ function peticion(
 ): Request {
   return {
     headers: { "unique-tenant-token": "token-de-organizacion", ...headers },
+    body: { message: "hola", ...body },
+    ip: "10.0.0.1",
+  } as unknown as Request;
+}
+
+/** Como `peticion`, pero sin token de organización: el fragmento nuevo. */
+function peticionSinToken(body: Record<string, unknown> = {}): Request {
+  return {
+    headers: {},
     body: { message: "hola", ...body },
     ip: "10.0.0.1",
   } as unknown as Request;
@@ -1035,5 +1049,141 @@ describe("SPEC-195 · la puerta del widget con identidad propia", () => {
 
     expect(getWidgetConfig).toHaveBeenCalledTimes(1);
     expect(atenderMensajeDelWidget).toHaveBeenCalledTimes(2);
+  });
+});
+
+
+// ── SPEC-195 · segunda vuelta ───────────────────────────────────────────────
+
+describe("SPEC-195 · el origen y el ámbito, con las dos rutas ya abiertas", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    limpiarCacheDeConfiguracionDeWidget();
+    createChatStream.mockResolvedValue(respuestaDeAgents());
+    atenderMensajeDelWidget.mockResolvedValue(respuestaDeLeads());
+    getWidgetConfig.mockResolvedValue(configuracion(false));
+  });
+
+  it("Se apunta desde dónde se cargó", async () => {
+    await createChat(
+      peticion({ widgetId: WIDGET }, { origin: "https://tienda.example" }),
+      comoRespuesta(respuesta()),
+    );
+
+    expect(apuntarOrigen).toHaveBeenCalledWith(
+      WIDGET,
+      "https://tienda.example",
+      expect.anything(),
+    );
+  });
+
+  it("se apunta contra el widget resuelto, no contra lo que vino en el cuerpo", async () => {
+    // Un fragmento antiguo manda el agente; lo observado cuelga del widget.
+    getWidgetConfig.mockResolvedValue(configuracion(false, null, { widgetId: "w-resuelto" }));
+
+    await createChat(
+      peticion({ agentId: AGENTE }, { origin: "https://tienda.example" }),
+      comoRespuesta(respuesta()),
+    );
+
+    expect(apuntarOrigen).toHaveBeenCalledWith(
+      "w-resuelto",
+      "https://tienda.example",
+      expect.anything(),
+    );
+  });
+
+  it("Una petición sin origen se atiende igual", async () => {
+    const res = respuesta();
+
+    await createChat(peticion({ widgetId: WIDGET }), comoRespuesta(res));
+
+    await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+  });
+
+  it("no se apunta lo que no se ha podido resolver", async () => {
+    // Sin widget al que colgarlo no hay nada que apuntar.
+    getWidgetConfig.mockResolvedValue(noResuelve());
+
+    await createChat(
+      peticion({ widgetId: "inventado" }, { origin: "https://tienda.example" }),
+      comoRespuesta(respuesta()),
+    );
+
+    expect(apuntarOrigen).not.toHaveBeenCalled();
+  });
+
+  it("un widget apagado se sigue apuntando", async () => {
+    // Es justo la señal que interesa: el fragmento sigue pegado en esa página
+    // aunque el tenant lo haya apagado (ADR-038).
+    getWidgetConfig.mockResolvedValue(configuracion(false, null, { active: false }));
+
+    await createChat(
+      peticion({ widgetId: WIDGET }, { origin: "https://tienda.example" }),
+      comoRespuesta(respuesta()),
+    );
+
+    expect(apuntarOrigen).toHaveBeenCalled();
+  });
+
+  it("El token de organización ya no hace falta", async () => {
+    // Con `widgetId` no viene ninguno, y se atiende igual: la organización sale
+    // de resolver el widget (SPEC-203).
+    const res = respuesta();
+
+    await createChat(
+      peticionSinToken({ widgetId: WIDGET, message: "hola" }),
+      comoRespuesta(res),
+    );
+
+    expect(createChatStream).toHaveBeenCalledWith(
+      expect.objectContaining({ organizacionId: ORGANIZACION }),
+    );
+    await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+  });
+
+  it("y no se manda además el token: las dos señales juntas se rechazan", async () => {
+    // SPEC-203: la discrepancia devolvía 200 y se ignoraba en silencio; ahora
+    // se rechaza. Con el widget resuelto, la organización es la buena.
+    await createChat(peticion({ widgetId: WIDGET }), comoRespuesta(respuesta()));
+
+    const [params] = createChatStream.mock.calls[0] as [Record<string, unknown>];
+    expect(params.organizacionId).toBe(ORGANIZACION);
+    expect(params.uniqueToken).toBeUndefined();
+  });
+
+  it("un fragmento sin identificador ninguno sigue yendo por el token", async () => {
+    await createChat(peticion({}), comoRespuesta(respuesta()));
+
+    const [params] = createChatStream.mock.calls[0] as [Record<string, unknown>];
+    expect(params.uniqueToken).toBe("token-de-organizacion");
+    expect(params.organizacionId).toBeUndefined();
+  });
+
+  it("sin token y sin nada que resolver no se puede atender", async () => {
+    const res = respuesta();
+
+    await createChat(peticionSinToken({ message: "hola" }), comoRespuesta(res));
+
+    expect(res.codigo).toBe(401);
+    expect(createChatStream).not.toHaveBeenCalled();
+  });
+
+  it("si no se pudo resolver el widget, se atiende con el token que vino", async () => {
+    // La regla de SPEC-167 otra vez: un tropiezo no deja mudo a nadie, y para
+    // eso hace falta el token que el fragmento todavía manda.
+    getWidgetConfig.mockResolvedValue({
+      success: false,
+      statusCode: 503,
+      duration: 1,
+      error: { code: "CONNECTION_ERROR", message: "no hay nadie", service: "ms-agents" },
+    });
+    const res = respuesta();
+
+    await createChat(peticion({ widgetId: WIDGET }), comoRespuesta(res));
+
+    const [params] = createChatStream.mock.calls[0] as [Record<string, unknown>];
+    expect(params.uniqueToken).toBe("token-de-organizacion");
+    await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
   });
 });
