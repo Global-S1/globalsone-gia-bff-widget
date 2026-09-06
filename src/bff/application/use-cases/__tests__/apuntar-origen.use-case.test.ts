@@ -7,11 +7,7 @@ vi.mock("../../../infrastructure/service-clients/agents-service.client", () => (
   getAgentsServiceClient: () => ({ apuntarVisto }),
 }));
 
-import {
-  dominioDelOrigen,
-  apuntarOrigen,
-  olvidarOrigenesApuntados,
-} from "../apuntar-origen.use-case";
+import { apuntarOrigen, olvidarOrigenesApuntados } from "../apuntar-origen.use-case";
 import type { IRequestContext } from "../../../domain/interfaces/request-context.interface";
 
 /**
@@ -23,45 +19,9 @@ import type { IRequestContext } from "../../../domain/interfaces/request-context
 
 const contexto: IRequestContext = { correlationId: "corr-1", timestamp: new Date() };
 
-describe("SPEC-195 · el dominio del origen", () => {
-  it("se queda con el dominio y tira todo lo demás", () => {
-    expect(dominioDelOrigen("https://tienda.example/productos?utm=x")).toBe("tienda.example");
-    expect(dominioDelOrigen("https://tienda.example")).toBe("tienda.example");
-  });
-
-  it("tira también el puerto: lo que se apunta es el dominio", () => {
-    expect(dominioDelOrigen("https://pruebas.tienda.example:8443")).toBe(
-      "pruebas.tienda.example",
-    );
-  });
-
-  it("lo pasa a minúsculas, que es como se guarda", () => {
-    expect(dominioDelOrigen("https://Tienda.EXAMPLE")).toBe("tienda.example");
-  });
-
-  it("admite un dominio pelado, sin esquema", () => {
-    expect(dominioDelOrigen("tienda.example")).toBe("tienda.example");
-  });
-
-  it("una petición sin origen no apunta nada", () => {
-    // Un navegador siempre lo manda en esta llamada; un servidor no. Y sin
-    // bloqueo encendido, eso se atiende igual (ADR-038).
-    expect(dominioDelOrigen(undefined)).toBeNull();
-    expect(dominioDelOrigen("")).toBeNull();
-    expect(dominioDelOrigen("   ")).toBeNull();
-  });
-
-  it("`null` literal de un navegador no es un dominio", () => {
-    // Es lo que manda un origen opaco: un iframe con sandbox, un fichero
-    // local. Apuntarlo ensuciaría la lista que el tenant mira.
-    expect(dominioDelOrigen("null")).toBeNull();
-  });
-
-  it("lo que no es una dirección tampoco lo es", () => {
-    expect(dominioDelOrigen("no soy un dominio")).toBeNull();
-    expect(dominioDelOrigen("javascript:alert(1)")).toBeNull();
-  });
-});
+// El dominio se saca en `bff/domain/dominio-del-origen.ts`, y ahí se prueba:
+// desde SPEC-196 lo comparte con quien decide bloquear, y una sola función es
+// justo lo que evita que las dos puntas de esa costura se separen.
 
 describe("SPEC-195 · apuntar lo observado", () => {
   beforeEach(() => {

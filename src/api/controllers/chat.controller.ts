@@ -7,6 +7,8 @@ import {
 } from "../../bff/infrastructure/service-clients/leads-service.client";
 import { resolverWidget } from "../../bff/application/use-cases/widget-config.use-case";
 import { apuntarOrigen } from "../../bff/application/use-cases/apuntar-origen.use-case";
+import { decidirPorDominio } from "../../bff/application/use-cases/bloqueo-por-dominio.use-case";
+import { dominioDelOrigen } from "../../bff/domain/dominio-del-origen";
 import { IRequestContext } from "../../bff/domain/interfaces/request-context.interface";
 import { IServiceResponse } from "../../bff/domain/interfaces/service-response.interface";
 import { logger } from "../../entities/shared/infraestructure/utils/logger";
@@ -35,6 +37,12 @@ import {
  * resolverlo salen su agente, su organización, si está activo y su interruptor
  * de leads. Un mensaje **sin** `widgetId` se resuelve por el agente, que es lo
  * que sostiene los fragmentos ya pegados en webs de clientes.
+ *
+ * **Desde SPEC-196 esa misma resolución puede cerrar la puerta** (RF-025 ·
+ * ADR-038): si el widget tiene el bloqueo encendido y el `Origin` no está entre
+ * los dominios que su tenant registró, se contesta una frase y no se llama a
+ * nadie — ni al modelo ni a la cuota. La decisión se toma **aquí dentro** y el
+ * CORS se queda abierto a propósito.
  *
  * Entrada (widget):
  *   headers: `unique-tenant-token` (sólo compatibilidad), `ip-address`,
@@ -81,6 +89,25 @@ const NO_TE_PUEDO_ATENDER =
  */
 const NO_EXISTE = "No he podido encontrar este asistente.";
 const NO_ESTA_DISPONIBLE = "Este asistente no está disponible en este momento.";
+
+/**
+ * La tercera, y por el mismo motivo que las otras dos (SPEC-196).
+ *
+ * Quien la lee es el visitante, pero quien puede arreglarlo es quien instaló el
+ * widget: aquí el arreglo es registrar el dominio, y ni «no existe» ni «está
+ * apagado» le llevarían a mirar ahí.
+ *
+ * **No repite el dominio que vino.** El `Origin` lo pone quien llama y esto se
+ * pinta en una página que no controlamos: devolverlo sería enseñar en el widget
+ * de un tercero lo que un tercero mandó.
+ *
+ * Comparte el 403 con «no está disponible» y no estrena código: 403 es lo que
+ * de verdad es esto —quien llama no está autorizado—, y elegir otro sólo para
+ * distinguirlo obligaría a torcer el significado del código para repetir una
+ * distinción que la frase ya lleva.
+ */
+const DOMINIO_NO_AUTORIZADO =
+  "Este dominio no está autorizado para usar este asistente.";
 
 export async function createChat(req: Request, res: Response): Promise<void> {
   const body = (req.body ?? {}) as {
@@ -178,11 +205,37 @@ export async function createChat(req: Request, res: Response): Promise<void> {
       // estando pegado — que es justamente lo que el tenant necesita ver.
       //
       // No se espera: es una observación, no parte de contestar.
-      apuntarOrigen(
-        configuracion.widgetId,
-        req.headers.origin as string | undefined,
-        context
-      );
+      const origen = req.headers.origin as string | undefined;
+      apuntarOrigen(configuracion.widgetId, origen, context);
+
+      // ── El bloqueo por dominio (SPEC-196 · RF-025 · ADR-038) ──────────────
+      //
+      // **Se decide aquí dentro y no en el CORS**, que se queda abierto: si se
+      // rechazara en el borde, el navegador cortaría antes de que la página
+      // pudiera leer la frase, y entregar la frase es el objetivo.
+      //
+      // Va **después de apuntar** —el intento queda constando igual, que es lo
+      // que el tenant necesita ver— y **antes de las dos puertas**, que es lo
+      // que hace que una petición bloqueada no gaste ni modelo ni cuota: el
+      // tope diario lo aplica ms-agents sobre lo que le llega, así que lo que
+      // no se le manda no se cuenta. Ese ahorro es el motivo entero de la
+      // medida.
+      //
+      // Y antes de mirar si está activo, que es una decisión de aquí y no del
+      // SPEC: a quien no está autorizado no se le cuenta en qué estado está el
+      // widget de otro.
+      if (decidirPorDominio(configuracion, origen) === "no-autorizado") {
+        logger.warn("Un widget con el bloqueo encendido recibió un mensaje desde un dominio que no tiene registrado", {
+          widgetId: configuracion.widgetId,
+          // El dominio ya normalizado y nunca la cabecera en crudo: lo que se
+          // registra no lo escribe quien llama.
+          dominio: dominioDelOrigen(origen),
+        });
+        res
+          .status(StatusCodes.FORBIDDEN)
+          .json({ success: false, message: DOMINIO_NO_AUTORIZADO });
+        return;
+      }
 
       if (!configuracion.active) {
         // Un widget apagado no gasta modelo: se contesta antes de las dos

@@ -13,6 +13,11 @@ const CONFIG = {
   active: true,
   leadsEnabled: true,
   contactFormUrl: null,
+  // SPEC-205: los dos van siempre en la respuesta interna, y `allowedDomains`
+  // también cuando está vacía. Se guardan con el resto: quien decide bloquear
+  // lee de aquí, y sin ellos la caché serviría una configuración incompleta.
+  allowedDomains: [] as string[],
+  domainBlockingEnabled: false,
 };
 
 describe("caché de la configuración de widget", () => {

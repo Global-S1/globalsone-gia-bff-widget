@@ -1,4 +1,5 @@
 import { IRequestContext } from "../../domain/interfaces/request-context.interface";
+import { dominioDelOrigen } from "../../domain/dominio-del-origen";
 import { getAgentsServiceClient } from "../../infrastructure/service-clients/agents-service.client";
 import { logger } from "../../../entities/shared/infraestructure/utils/logger";
 
@@ -48,37 +49,6 @@ const apuntados = new Map<string, number>();
 /** Vacía lo recordado. Existe para las pruebas: en marcha nadie la invalida. */
 export function olvidarOrigenesApuntados(): void {
   apuntados.clear();
-}
-
-/**
- * El dominio de un origen, en minúsculas, o nada.
- *
- * **Sólo el dominio**: ni la dirección completa, ni el camino, ni lo que traiga
- * pegado, ni el puerto. Lo que sale de este servicio es lo que se va a guardar
- * (SPEC-195), y una lista de dominios con una consulta dentro sería a la vez
- * inútil para el panel y un sitio donde acaban datos que nadie pidió.
- *
- * Admite un origen completo o un dominio pelado, igual que la ruta que lo
- * recibe. Y descarta `null`, que es lo que manda un navegador con un origen
- * opaco —un iframe con `sandbox`, un fichero local—: apuntarlo ensuciaría con
- * una entrada sin significado la lista que el tenant mira antes de encender el
- * bloqueo.
- */
-export function dominioDelOrigen(origen: string | undefined): string | null {
-  if (typeof origen !== "string") return null;
-  const limpio = origen.trim();
-  if (limpio === "" || limpio === "null") return null;
-
-  const candidato = /^[a-z][a-z0-9+.-]*:\/\//i.test(limpio)
-    ? limpio
-    : `https://${limpio}`;
-
-  try {
-    const { hostname } = new URL(candidato);
-    return hostname === "" ? null : hostname.toLowerCase();
-  } catch {
-    return null;
-  }
 }
 
 /**
