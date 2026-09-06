@@ -141,6 +141,12 @@ function configuracion(
       active: true,
       leadsEnabled,
       contactFormUrl,
+      // SPEC-205: los dos campos salen SIEMPRE por la ruta interna, y
+      // `allowedDomains` también cuando está vacía —quien compara necesita
+      // distinguir «no hay lista» de «no me lo contó»—. Así nace un widget:
+      // sin dominios declarados y con el bloqueo apagado.
+      allowedDomains: [] as string[],
+      domainBlockingEnabled: false,
       ...extra,
     },
   };
@@ -1184,6 +1190,223 @@ describe("SPEC-195 · el origen y el ámbito, con las dos rutas ya abiertas", ()
 
     const [params] = createChatStream.mock.calls[0] as [Record<string, unknown>];
     expect(params.uniqueToken).toBe("token-de-organizacion");
+    await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+  });
+});
+
+describe("SPEC-196 · atender sólo desde lo registrado", () => {
+  /** La frase que lee quien conversa cuando el dominio no está autorizado. */
+  const NO_AUTORIZADO = "Este dominio no está autorizado para usar este asistente.";
+
+  /** El antecedente del Gherkin: bloqueo encendido y "pepito.com" registrado. */
+  function conBloqueo(extra: Record<string, unknown> = {}) {
+    return configuracion(false, null, {
+      domainBlockingEnabled: true,
+      allowedDomains: ["pepito.com"],
+      ...extra,
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    limpiarCacheDeConfiguracionDeWidget();
+    createChatStream.mockResolvedValue(respuestaDeAgents());
+    atenderMensajeDelWidget.mockResolvedValue(respuestaDeLeads());
+    getWidgetConfig.mockResolvedValue(conBloqueo());
+  });
+
+  it("Desde el dominio registrado se atiende", async () => {
+    const res = respuesta();
+
+    await createChat(
+      peticion({ widgetId: WIDGET }, { origin: "https://pepito.com" }),
+      comoRespuesta(res),
+    );
+
+    expect(createChatStream).toHaveBeenCalledTimes(1);
+    await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+  });
+
+  it("Desde otro dominio se contesta que no está autorizado, y NO se llama al modelo", async () => {
+    const res = respuesta();
+
+    await createChat(
+      peticion({ widgetId: WIDGET }, { origin: "https://raul.com" }),
+      comoRespuesta(res),
+    );
+
+    expect(res.codigo).toBe(403);
+    expect(res.json).toHaveBeenCalledWith({ success: false, message: NO_AUTORIZADO });
+    expect(createChatStream).not.toHaveBeenCalled();
+    expect(atenderMensajeDelWidget).not.toHaveBeenCalled();
+  });
+
+  it("Y se responde con normalidad, no con un error que la página no pueda leer", async () => {
+    // Si se cortara por CORS el navegador no dejaría leer la respuesta y el
+    // visitante vería un widget roto en vez del mensaje. Lo que llega es una
+    // respuesta corriente, con la misma forma que el widget ya sabe leer.
+    const res = respuesta();
+
+    await createChat(
+      peticion({ widgetId: WIDGET }, { origin: "https://raul.com" }),
+      comoRespuesta(res),
+    );
+
+    await expect(res.cuerpo()).resolves.toBe(
+      JSON.stringify({ success: false, message: NO_AUTORIZADO }),
+    );
+  });
+
+  it("Con el bloqueo apagado se atiende desde cualquier sitio", async () => {
+    getWidgetConfig.mockResolvedValue(conBloqueo({ domainBlockingEnabled: false }));
+    const res = respuesta();
+
+    await createChat(
+      peticion({ widgetId: WIDGET }, { origin: "https://raul.com" }),
+      comoRespuesta(res),
+    );
+
+    expect(createChatStream).toHaveBeenCalledTimes(1);
+    await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+  });
+
+  it("Sin dominios registrados no se bloquea nada", async () => {
+    // Si no, crear un widget lo dejaría muerto hasta que alguien se acordara.
+    getWidgetConfig.mockResolvedValue(conBloqueo({ allowedDomains: [] }));
+    const res = respuesta();
+
+    await createChat(
+      peticion({ widgetId: WIDGET }, { origin: "https://donde-sea.example" }),
+      comoRespuesta(res),
+    );
+
+    expect(createChatStream).toHaveBeenCalledTimes(1);
+    await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+  });
+
+  it("Una petición sin origen no se atiende", async () => {
+    // Un navegador siempre lo manda en esta llamada, así que su ausencia
+    // significa que quien llama no es una página.
+    const res = respuesta();
+
+    await createChat(peticion({ widgetId: WIDGET }), comoRespuesta(res));
+
+    expect(res.codigo).toBe(403);
+    expect(res.json).toHaveBeenCalledWith({ success: false, message: NO_AUTORIZADO });
+    expect(createChatStream).not.toHaveBeenCalled();
+  });
+
+  it("un `Origin: null` cuenta como sin origen", async () => {
+    // Un iframe con arenero o un fichero local: no es un dominio llamado null.
+    const res = respuesta();
+
+    await createChat(
+      peticion({ widgetId: WIDGET }, { origin: "null" }),
+      comoRespuesta(res),
+    );
+
+    expect(res.codigo).toBe(403);
+    expect(createChatStream).not.toHaveBeenCalled();
+  });
+
+  it("El intento queda apuntado", async () => {
+    // Saber desde dónde te intentan cargar es justo lo que el tenant necesita
+    // ver (ADR-038), así que apuntar ocurre igual aunque se bloquee.
+    await createChat(
+      peticion({ widgetId: WIDGET }, { origin: "https://raul.com" }),
+      comoRespuesta(respuesta()),
+    );
+
+    expect(apuntarOrigen).toHaveBeenCalledWith(WIDGET, "https://raul.com", expect.anything());
+  });
+
+  it("Un dominio bloqueado no gasta cuota del tenant", async () => {
+    // El tope diario lo aplica ms-agents sobre las llamadas que le llegan con
+    // `x-channel: widget`; ms-leads cuenta las suyas. No llamar a ninguno es lo
+    // que hace que esto no cueste ni modelo ni cuota, que es el motivo entero
+    // de la medida.
+    await createChat(
+      peticion({ widgetId: WIDGET }, { origin: "https://raul.com" }),
+      comoRespuesta(respuesta()),
+    );
+
+    expect(createChatStream).not.toHaveBeenCalled();
+    expect(atenderMensajeDelWidget).not.toHaveBeenCalled();
+  });
+
+  it("se decide antes de las dos puertas, también con leads encendido", async () => {
+    getWidgetConfig.mockResolvedValue(conBloqueo({ leadsEnabled: true }));
+    const res = respuesta();
+
+    await createChat(
+      peticion({ widgetId: WIDGET, visitanteId: VISITANTE }, { origin: "https://raul.com" }),
+      comoRespuesta(res),
+    );
+
+    expect(res.codigo).toBe(403);
+    expect(atenderMensajeDelWidget).not.toHaveBeenCalled();
+    expect(createChatStream).not.toHaveBeenCalled();
+  });
+
+  it("un subdominio no registrado no cuela", async () => {
+    // ADR-038 dejó los comodines de subdominio sin decidir; aquí no se inventan.
+    const res = respuesta();
+
+    await createChat(
+      peticion({ widgetId: WIDGET }, { origin: "https://tienda.pepito.com" }),
+      comoRespuesta(res),
+    );
+
+    expect(res.codigo).toBe(403);
+  });
+
+  it("un puerto y un esquema distintos siguen siendo el mismo sitio", async () => {
+    // Es la costura con ms-agents: allá se guardó `pepito.com` y el navegador
+    // manda esto. Si las dos normalizaciones se separan, el tenant se queda
+    // fuera de su propia web.
+    const res = respuesta();
+
+    await createChat(
+      peticion({ widgetId: WIDGET }, { origin: "http://Pepito.com:8443" }),
+      comoRespuesta(res),
+    );
+
+    expect(createChatStream).toHaveBeenCalledTimes(1);
+    await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+  });
+
+  it("la frase no repite el dominio que vino", async () => {
+    // Se pinta en una página que no controlamos y el `Origin` lo pone quien
+    // llama: devolverlo sería reflejar en el widget lo que alguien mandó.
+    const res = respuesta();
+
+    await createChat(
+      peticion({ widgetId: WIDGET }, { origin: "https://<img src=x>.example" }),
+      comoRespuesta(res),
+    );
+
+    expect(res.codigo).toBe(403);
+    const [cuerpo] = res.json.mock.calls[0] as [{ message: string }];
+    expect(cuerpo.message).toBe(NO_AUTORIZADO);
+  });
+
+  it("lo que no se ha podido resolver no se bloquea", async () => {
+    // La regla de SPEC-167 no cambia: un tropiezo de ms-agents no puede dejar
+    // mudo un widget sano, y sin resolver no hay lista contra la que comparar.
+    getWidgetConfig.mockResolvedValue({
+      success: false,
+      statusCode: 503,
+      duration: 1,
+      error: { code: "CONNECTION_ERROR", message: "no hay nadie", service: "ms-agents" },
+    });
+    const res = respuesta();
+
+    await createChat(
+      peticion({ widgetId: WIDGET }, { origin: "https://raul.com" }),
+      comoRespuesta(res),
+    );
+
+    expect(createChatStream).toHaveBeenCalledTimes(1);
     await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
   });
 });

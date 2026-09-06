@@ -28,4 +28,20 @@ export interface IWidgetConfig {
   readonly leadsEnabled: boolean;
   /** Dirección `http`/`https` del formulario del tenant, o nada. */
   readonly contactFormUrl: string | null;
+  /**
+   * SPEC-205 · SPEC-196 — los dominios que el tenant **declaró suyos**, ya
+   * normalizados por ms-agents: sin esquema, sin puerto, sin camino, en
+   * minúsculas y con el IDN en punycode.
+   *
+   * **Va siempre presente aunque esté vacía, y es a propósito**: quien compara
+   * necesita distinguir «no hay lista» de «no me lo contó». Vacía significa que
+   * el tenant no registró ninguno, y entonces no se bloquea nada.
+   *
+   * No confundir con los orígenes **observados**, que son otra lista y no salen
+   * por esta ruta: una la escribe una persona y dice «esto es mío», la otra la
+   * escribe el tráfico y dice «esto está pasando».
+   */
+  readonly allowedDomains: readonly string[];
+  /** Si esos dominios se hacen cumplir. Nace apagado (RF-025). */
+  readonly domainBlockingEnabled: boolean;
 }
