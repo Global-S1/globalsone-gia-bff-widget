@@ -42,6 +42,16 @@ describe("SPEC-196 · cuándo se bloquea", () => {
     ).toBe("se-atiende");
   });
 
+  it("sin lista, una petición sin origen se atiende igual", () => {
+    // Es la única pareja donde las dos reglas se cruzan, y gana la de la
+    // lista: «encendido y sin lista no bloquea nada» es absoluto, porque lo
+    // que evita es que crear un widget lo deje muerto hasta que alguien se
+    // acordara. Sin nada contra qué comparar no hay dominio que rechazar.
+    expect(
+      decidirPorDominio({ domainBlockingEnabled: true, allowedDomains: [] }, undefined),
+    ).toBe("se-atiende");
+  });
+
   it("Una petición sin origen no se atiende", () => {
     // En esta llamada un navegador siempre manda `Origin`: su ausencia
     // significa que quien llama no es una página.
