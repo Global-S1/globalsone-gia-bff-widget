@@ -32,6 +32,7 @@ import { PRESUPUESTO_DE_CABECERAS } from "../apartados-en-cabecera";
 const AGENTE = "agente-1";
 const ORGANIZACION = "org-1";
 const VISITANTE = "visitante-abc";
+const WIDGET = "widget-1";
 
 function peticion(
   body: Record<string, unknown> = {},
@@ -106,12 +107,46 @@ function respuestaDeAgents(texto = "respuesta del agente") {
   };
 }
 
-function configuracion(leadsEnabled: boolean, contactFormUrl: string | null = null) {
+function configuracion(
+  leadsEnabled: boolean,
+  contactFormUrl: string | null = null,
+  extra: Record<string, unknown> = {},
+) {
   return {
     success: true,
     statusCode: 200,
     duration: 1,
-    data: { agentId: AGENTE, organizationId: ORGANIZACION, leadsEnabled, contactFormUrl },
+    data: {
+      // SPEC-195 · ADR-037: el widget ya es una entidad, así que la resolución
+      // trae su identificador y si está activo, además del agente y la
+      // organización. Verificado en `ms-agents/src/application/widgets/
+      // widgets.service.ts` (`configuracionInterna`).
+      widgetId: WIDGET,
+      agentId: AGENTE,
+      organizationId: ORGANIZACION,
+      active: true,
+      leadsEnabled,
+      contactFormUrl,
+      ...extra,
+    },
+  };
+}
+
+/** Lo que ms-agents contesta cuando `:id` no resuelve ni a widget ni a agente. */
+function noResuelve() {
+  return {
+    success: false,
+    statusCode: 404,
+    duration: 1,
+    error: {
+      code: "404",
+      message: "Request failed",
+      service: "ms-agents",
+      details: {
+        success: false,
+        kindMessage: "No existe ningún widget con ese identificador ni el de su agente",
+      },
+    },
   };
 }
 
@@ -811,5 +846,194 @@ describe("SPEC-188 · los ficheros hacia el navegador", () => {
     expect(res.cabeceras["Chat-Files"]).toBeUndefined();
     expect(res.cabeceras["Chat-Photos"]).toBeUndefined();
     await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+  });
+});
+
+
+// ── SPEC-195 ────────────────────────────────────────────────────────────────
+
+describe("SPEC-195 · la puerta del widget con identidad propia", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    limpiarCacheDeConfiguracionDeWidget();
+    createChatStream.mockResolvedValue(respuestaDeAgents());
+    atenderMensajeDelWidget.mockResolvedValue(respuestaDeLeads());
+  });
+
+  it("Un mensaje con identificador de widget", async () => {
+    // Ni el agente ni la organización vienen en la petición: los dos salen de
+    // resolver el widget (ADR-037).
+    getWidgetConfig.mockResolvedValue(configuracion(true));
+    const res = respuesta();
+
+    await createChat(
+      peticion({ widgetId: WIDGET, visitanteId: VISITANTE }),
+      comoRespuesta(res),
+    );
+
+    expect(getWidgetConfig).toHaveBeenCalledWith(WIDGET, expect.anything());
+    expect(atenderMensajeDelWidget).toHaveBeenCalledWith(
+      expect.objectContaining({ organizacionId: ORGANIZACION, agenteId: AGENTE }),
+      expect.anything(),
+    );
+    await expect(res.cuerpo()).resolves.toBe("respuesta desde leads");
+  });
+
+  it("El agente resuelto es el del widget, no el que venga en el cuerpo", async () => {
+    // Si los dos vienen, manda el widget: es la entidad, y el agente del cuerpo
+    // es el dato viejo que se está retirando.
+    getWidgetConfig.mockResolvedValue(configuracion(true, null, { agentId: "agente-del-widget" }));
+
+    await createChat(
+      peticion({ widgetId: WIDGET, agentId: "agente-del-cuerpo", visitanteId: VISITANTE }),
+      comoRespuesta(respuesta()),
+    );
+
+    expect(getWidgetConfig).toHaveBeenCalledWith(WIDGET, expect.anything());
+    expect(atenderMensajeDelWidget).toHaveBeenCalledWith(
+      expect.objectContaining({ agenteId: "agente-del-widget" }),
+      expect.anything(),
+    );
+  });
+
+  it("Un fragmento antiguo sigue funcionando", async () => {
+    // Sin `widgetId` se resuelve por el agente, y ms-agents devuelve el widget
+    // por defecto: el más antiguo de los suyos.
+    getWidgetConfig.mockResolvedValue(configuracion(true));
+    const res = respuesta();
+
+    await createChat(
+      peticion({ agentId: AGENTE, visitanteId: VISITANTE }),
+      comoRespuesta(res),
+    );
+
+    expect(getWidgetConfig).toHaveBeenCalledWith(AGENTE, expect.anything());
+    expect(atenderMensajeDelWidget).toHaveBeenCalledTimes(1);
+    await expect(res.cuerpo()).resolves.toBe("respuesta desde leads");
+  });
+
+  it("Un identificador que no existe", async () => {
+    getWidgetConfig.mockResolvedValue(noResuelve());
+    const res = respuesta();
+
+    await createChat(peticion({ widgetId: "inventado" }), comoRespuesta(res));
+
+    // Una frase que el widget pueda enseñar: la lee de `message`.
+    expect(res.codigo).toBe(404);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      message: expect.stringContaining("asistente"),
+    });
+    // Y no se llama a nadie más.
+    expect(createChatStream).not.toHaveBeenCalled();
+    expect(atenderMensajeDelWidget).not.toHaveBeenCalled();
+  });
+
+  it("Un identificador que no existe no cuenta nada de dentro", async () => {
+    getWidgetConfig.mockResolvedValue(noResuelve());
+    const res = respuesta();
+
+    await createChat(peticion({ widgetId: "inventado" }), comoRespuesta(res));
+
+    const cuerpo = await res.cuerpo();
+    expect(cuerpo).not.toContain("ms-agents");
+    expect(cuerpo).not.toContain("widget con ese identificador");
+  });
+
+  it("Un widget desactivado no atiende", async () => {
+    getWidgetConfig.mockResolvedValue(configuracion(true, null, { active: false }));
+    const res = respuesta();
+
+    await createChat(
+      peticion({ widgetId: WIDGET, visitanteId: VISITANTE }),
+      comoRespuesta(res),
+    );
+
+    expect(res.codigo).toBe(403);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      message: expect.stringContaining("no está disponible"),
+    });
+    // Ni por una puerta ni por la otra: un widget apagado no gasta modelo.
+    expect(createChatStream).not.toHaveBeenCalled();
+    expect(atenderMensajeDelWidget).not.toHaveBeenCalled();
+  });
+
+  it("Un widget desactivado se distingue de uno que no existe", async () => {
+    // Dos frases distintas y dos códigos distintos: para quien instala el
+    // widget, «lo apagaste» y «te equivocaste de identificador» son dos
+    // problemas con dos arreglos.
+    getWidgetConfig.mockResolvedValue(configuracion(true, null, { active: false }));
+    const apagado = respuesta();
+    await createChat(peticion({ widgetId: WIDGET }), comoRespuesta(apagado));
+
+    limpiarCacheDeConfiguracionDeWidget();
+    getWidgetConfig.mockResolvedValue(noResuelve());
+    const inexistente = respuesta();
+    await createChat(peticion({ widgetId: "otro" }), comoRespuesta(inexistente));
+
+    expect(apagado.codigo).not.toBe(inexistente.codigo);
+    await expect(apagado.cuerpo()).resolves.not.toBe(await inexistente.cuerpo());
+  });
+
+  it("Si no se puede saber quién es el widget, se atiende como hoy", async () => {
+    // La regla de SPEC-167 sigue en pie y NO se confunde con «no existe»: un
+    // tropiezo de ms-agents no puede dejar mudo el chat de un cliente, y un
+    // 404 no puede disimularse como si fuera un tropiezo.
+    getWidgetConfig.mockResolvedValue({
+      success: false,
+      statusCode: 503,
+      duration: 1,
+      error: { code: "CONNECTION_ERROR", message: "no hay nadie", service: "ms-agents" },
+    });
+    const res = respuesta();
+
+    await createChat(
+      peticion({ widgetId: WIDGET, visitanteId: VISITANTE }),
+      comoRespuesta(res),
+    );
+
+    expect(createChatStream).toHaveBeenCalledTimes(1);
+    await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+  });
+
+  it("Un mensaje sin ningún identificador sigue yendo por el token", async () => {
+    // El fragmento más viejo de todos: sólo el token de organización, y es
+    // ms-agents quien resuelve el agente a partir de él.
+    const res = respuesta();
+
+    await createChat(peticion({}), comoRespuesta(res));
+
+    expect(getWidgetConfig).not.toHaveBeenCalled();
+    expect(createChatStream).toHaveBeenCalledTimes(1);
+    await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+  });
+
+  it("El agente del widget viaja a ms-agents cuando leads está apagado", async () => {
+    // Con sólo `widgetId`, el camino de siempre tiene que saber a qué agente
+    // entrenado apuntar: sale de la resolución, no del cuerpo.
+    getWidgetConfig.mockResolvedValue(configuracion(false));
+
+    await createChat(peticion({ widgetId: WIDGET }), comoRespuesta(respuesta()));
+
+    expect(createChatStream).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId: AGENTE }),
+    );
+  });
+
+  it("La resolución no se pregunta en cada mensaje", async () => {
+    getWidgetConfig.mockResolvedValue(configuracion(true));
+
+    await createChat(
+      peticion({ widgetId: WIDGET, visitanteId: VISITANTE }),
+      comoRespuesta(respuesta()),
+    );
+    await createChat(
+      peticion({ widgetId: WIDGET, visitanteId: VISITANTE }),
+      comoRespuesta(respuesta()),
+    );
+
+    expect(getWidgetConfig).toHaveBeenCalledTimes(1);
+    expect(atenderMensajeDelWidget).toHaveBeenCalledTimes(2);
   });
 });

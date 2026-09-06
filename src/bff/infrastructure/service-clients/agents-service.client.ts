@@ -2,6 +2,7 @@ import { BaseServiceClient } from "./base-service-client";
 import { getServiceConfig, ServiceKeys } from "../config/backend-services.config";
 import { IRequestContext } from "../../domain/interfaces/request-context.interface";
 import { IServiceResponse } from "../../domain/interfaces/service-response.interface";
+import { IServiceConfig } from "../../domain/interfaces/service-client.interface";
 import { env } from "../../../entities/shared/infraestructure/config/environments";
 import { IWidgetConfig } from "../../domain/interfaces/widget-config.interface";
 import type { Dispatcher } from "undici";
@@ -38,8 +39,14 @@ export interface ICreateChatParams {
  * partir del token de organización + el canal.
  */
 export class AgentsServiceClient extends BaseServiceClient {
-  constructor() {
-    super(getServiceConfig(ServiceKeys.AGENTS));
+  /**
+   * La configuración se puede inyectar, igual que en los clientes de ms-leads y
+   * ms-documents. Sin eso, este cliente sólo es construible con el fichero de
+   * servicios cargado, y sus rutas —que es lo que más se equivoca— quedan sin
+   * poder probarse.
+   */
+  constructor(config?: IServiceConfig) {
+    super(config ?? getServiceConfig(ServiceKeys.AGENTS));
   }
 
   async getStats(context: IRequestContext): Promise<IServiceResponse<any>> {
@@ -50,8 +57,16 @@ export class AgentsServiceClient extends BaseServiceClient {
   }
 
   /**
-   * SPEC-162 — la configuración de widget de un agente, para decidir por qué
-   * puerta entra su visitante (SPEC-167 · ADR-034).
+   * SPEC-195 · ADR-037 — quién es este widget: su agente, su organización, si
+   * está activo y por qué puerta entra su visitante (SPEC-167 · ADR-034).
+   *
+   * **La ruta es la del widget y ya no la del agente.** El widget es una
+   * entidad desde SPEC-192, y `:id` vale como identificador de widget **o** de
+   * agente: cuando es un agente, ms-agents devuelve su widget por defecto —el
+   * más antiguo—, que es lo que sostiene los fragmentos ya pegados en webs de
+   * clientes. La vieja `/v1/agents/:id/widget-config` comparte manejador y no
+   * difiere en nada, así que este cambio no puede alterar comportamiento; se
+   * deja de usar aquí porque su retirada es de este SPEC.
    *
    * Trae `organizationId`, y eso es lo que la hace imprescindible: este BFF
    * tiene un TOKEN de organización, que identifica pero no dice cuál es, y
@@ -61,13 +76,13 @@ export class AgentsServiceClient extends BaseServiceClient {
    * token del widget. Sin él, 403.
    */
   async getWidgetConfig(
-    agentId: string,
+    identificador: string,
     context: IRequestContext
   ): Promise<IServiceResponse<IWidgetConfig>> {
     return this.request<IWidgetConfig>(
       {
         method: "GET",
-        path: `/v1/agents/${encodeURIComponent(agentId)}/widget-config`,
+        path: `/v1/widgets/${encodeURIComponent(identificador)}/config`,
         // Un reintento y no dos: esta consulta va DELANTE de la respuesta al
         // visitante, y su fallo no le deja sin contestar —se cae al camino de
         // hoy—, así que esperar de más aquí sólo alarga el silencio.

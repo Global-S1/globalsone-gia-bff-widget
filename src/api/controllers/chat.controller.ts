@@ -5,7 +5,7 @@ import {
   getLeadsServiceClient,
   IRespuestaDeLeads,
 } from "../../bff/infrastructure/service-clients/leads-service.client";
-import { obtenerConfiguracionDeWidget } from "../../bff/application/use-cases/widget-config.use-case";
+import { resolverWidget } from "../../bff/application/use-cases/widget-config.use-case";
 import { IRequestContext } from "../../bff/domain/interfaces/request-context.interface";
 import { IServiceResponse } from "../../bff/domain/interfaces/service-response.interface";
 import { logger } from "../../entities/shared/infraestructure/utils/logger";
@@ -29,10 +29,16 @@ import {
  * misma máquina de estados que un mensaje de Telegram y contesta en la misma
  * petición—; si no, sigue yendo a ms-agents exactamente como hasta hoy.
  *
+ * **Desde SPEC-195 la puerta se entiende con un widget** (ADR-037), que ya es
+ * una entidad y no una faceta del agente: el cuerpo gana `widgetId`, y de
+ * resolverlo salen su agente, su organización, si está activo y su interruptor
+ * de leads. Un mensaje **sin** `widgetId` se resuelve por el agente, que es lo
+ * que sostiene los fragmentos ya pegados en webs de clientes.
+ *
  * Entrada (widget):
  *   headers: `unique-tenant-token`, `ip-address`
- *   body:    { message, uniqueTenantToken, agentId?, chatSessionId?, ipAddress?,
- *              visitanteId? }
+ *   body:    { message, widgetId?, uniqueTenantToken, agentId?, chatSessionId?,
+ *              ipAddress?, visitanteId? }
  *
  * Salida, **la misma forma por las dos puertas**: `200 text/plain` con el texto
  * de la respuesta. Por el camino de ms-agents se sirve según se escribe, para
@@ -60,9 +66,28 @@ import {
 const NO_TE_PUEDO_ATENDER =
   "No he podido responderte ahora mismo. Vuelve a intentarlo en un momento.";
 
+/**
+ * Las dos frases de SPEC-195, y **son dos a propósito**.
+ *
+ * Las lee quien conversa, pero quien tiene que actuar es quien instaló el
+ * widget: «lo apagaste» y «te equivocaste de identificador» son dos problemas
+ * con dos arreglos distintos, y una sola frase para ambos convierte diez
+ * minutos de revisión en una tarde. Van con códigos distintos por lo mismo.
+ *
+ * Ninguna cuenta nada de dentro: ni el identificador, ni el agente, ni la
+ * organización, ni lo que dijo ms-agents.
+ */
+const NO_EXISTE = "No he podido encontrar este asistente.";
+const NO_ESTA_DISPONIBLE = "Este asistente no está disponible en este momento.";
+
 export async function createChat(req: Request, res: Response): Promise<void> {
   const body = (req.body ?? {}) as {
     message?: string;
+    /**
+     * SPEC-195 · ADR-037 — la entidad que atiende. Con él dejan de hacer falta
+     * el agente y la organización: los dos salen de resolverlo.
+     */
+    widgetId?: string;
     uniqueTenantToken?: string;
     agentId?: string;
     chatSessionId?: string;
@@ -74,7 +99,7 @@ export async function createChat(req: Request, res: Response): Promise<void> {
     (req.headers["unique-tenant-token"] as string) || body.uniqueTenantToken;
   const ipAddress =
     (req.headers["ip-address"] as string) || body.ipAddress || req.ip;
-  const { message, agentId, chatSessionId } = body;
+  const { message, widgetId, agentId, chatSessionId } = body;
 
   // La identidad del lead en este canal (RF-018 · GLO-013): el identificador
   // que el widget conserva en el navegador. Sólo lo puede saber el navegador,
@@ -110,37 +135,73 @@ export async function createChat(req: Request, res: Response): Promise<void> {
   };
 
   // ── La puerta ────────────────────────────────────────────────────────────
-  // Sin agente no hay a quién preguntarle nada: se atiende por el camino de
-  // siempre, que es el que sabe resolver el agente desde el token.
-  if (agentId) {
-    const configuracion = await obtenerConfiguracionDeWidget(agentId, context);
+  //
+  // **El widget manda sobre el agente cuando vienen los dos** (SPEC-195): el
+  // widget es la entidad y el agente del cuerpo es el dato viejo que se está
+  // retirando. Sin ninguno de los dos no hay a quién resolver y se atiende por
+  // el camino de siempre, que sabe sacar el agente del token: es el fragmento
+  // más antiguo de todos y sigue funcionando.
+  const identificador = widgetId || agentId;
 
-    if (configuracion?.leadsEnabled) {
-      if (visitanteId) {
-        await atenderPorLeads(res, context, {
-          organizacionId: configuracion.organizationId,
-          agenteId: agentId,
-          visitanteId,
-          texto: message,
-          ...(ipAddress ? { ip: ipAddress } : {}),
+  // El agente al que apuntar. Sale de la resolución en cuanto la haya, porque
+  // con sólo `widgetId` el cuerpo no lo trae.
+  let agenteDelWidget = agentId;
+
+  if (identificador) {
+    const resolucion = await resolverWidget(identificador, context);
+
+    if (resolucion.tipo === "no-existe") {
+      // Y no se llama a nadie más: no hay agente al que preguntar.
+      res
+        .status(StatusCodes.NOT_FOUND)
+        .json({ success: false, message: NO_EXISTE });
+      return;
+    }
+
+    if (resolucion.tipo === "resuelto") {
+      const configuracion = resolucion.config;
+      agenteDelWidget = configuracion.agentId;
+
+      if (!configuracion.active) {
+        // Un widget apagado no gasta modelo: se contesta antes de las dos
+        // puertas, no dentro de una.
+        logger.warn("Un widget desactivado recibió un mensaje", {
+          widgetId: configuracion.widgetId,
         });
+        res
+          .status(StatusCodes.FORBIDDEN)
+          .json({ success: false, message: NO_ESTA_DISPONIBLE });
         return;
       }
 
-      // El interruptor está encendido pero el widget no manda identidad de
-      // visitante. Se atiende igual —quedarse mudo sería peor— y queda
-      // constancia, porque desde fuera esto se ve como «los leads no entran».
-      logger.warn(
-        "Agente con leads encendido y mensaje sin visitanteId: se atiende por ms-agents",
-        { agentId }
-      );
+      if (configuracion.leadsEnabled) {
+        if (visitanteId) {
+          await atenderPorLeads(res, context, {
+            organizacionId: configuracion.organizationId,
+            agenteId: configuracion.agentId,
+            visitanteId,
+            texto: message,
+            ...(ipAddress ? { ip: ipAddress } : {}),
+          });
+          return;
+        }
+
+        // El interruptor está encendido pero el widget no manda identidad de
+        // visitante. Se atiende igual —quedarse mudo sería peor— y queda
+        // constancia, porque desde fuera esto se ve como «los leads no entran».
+        logger.warn(
+          "Agente con leads encendido y mensaje sin visitanteId: se atiende por ms-agents",
+          { agentId: configuracion.agentId }
+        );
+      }
     }
+    // `no-se-sabe` cae aquí sin más: se atiende como hoy (SPEC-167).
   }
 
   await atenderPorAgents(res, {
     message,
     uniqueToken,
-    agentId,
+    agentId: agenteDelWidget,
     chatPerUserId: chatSessionId,
     ipAddress,
   });
