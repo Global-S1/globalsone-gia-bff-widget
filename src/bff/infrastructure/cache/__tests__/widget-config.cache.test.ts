@@ -7,10 +7,17 @@ import {
 } from "../widget-config.cache";
 
 const CONFIG = {
+  widgetId: "w-1",
   agentId: "a-1",
   organizationId: "org-1",
+  active: true,
   leadsEnabled: true,
   contactFormUrl: null,
+  // SPEC-205: los dos van siempre en la respuesta interna, y `allowedDomains`
+  // también cuando está vacía. Se guardan con el resto: quien decide bloquear
+  // lee de aquí, y sin ellos la caché serviría una configuración incompleta.
+  allowedDomains: [] as string[],
+  domainBlockingEnabled: false,
 };
 
 describe("caché de la configuración de widget", () => {
@@ -28,7 +35,7 @@ describe("caché de la configuración de widget", () => {
     expect(leerConfiguracionDeWidget("a-1")).toEqual(CONFIG);
   });
 
-  it("no confunde dos agentes", () => {
+  it("no confunde dos identificadores", () => {
     guardarConfiguracionDeWidget("a-1", CONFIG);
     expect(leerConfiguracionDeWidget("a-2")).toBeNull();
   });

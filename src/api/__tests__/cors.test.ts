@@ -26,12 +26,16 @@ vi.mock("cors", () => ({
 
 import { server } from "../../server";
 
-function cabecerasExpuestas(): string[] {
+function opcionesReales(): { exposedHeaders?: string[]; origin?: unknown } {
   server();
-  const opciones = opcionesDeCors.mock.calls[0]?.[0] as
-    | { exposedHeaders?: string[] }
-    | undefined;
-  return opciones?.exposedHeaders ?? [];
+  return (opcionesDeCors.mock.calls[0]?.[0] ?? {}) as {
+    exposedHeaders?: string[];
+    origin?: unknown;
+  };
+}
+
+function cabecerasExpuestas(): string[] {
+  return opcionesReales().exposedHeaders ?? [];
 }
 
 describe("SPEC-183 · el navegador puede leer lo que le mandamos", () => {
@@ -50,5 +54,15 @@ describe("SPEC-183 · el navegador puede leer lo que le mandamos", () => {
     expect(expuestas).toContain("Chat-Session-Id");
     expect(expuestas).toContain("Contact-Form-Url");
     expect(expuestas).toContain("Chat-Photos");
+  });
+});
+
+describe("SPEC-196 · el CORS se queda abierto", () => {
+  it("el origen no se restringe aquí: el bloqueo se decide dentro", () => {
+    // ADR-038: rechazar en el borde haría que el navegador cortara antes de
+    // que la página pudiera leer la frase, y entregar esa frase es el objetivo.
+    // Un día alguien verá `origin: "*"` y querrá «arreglarlo» poniendo la lista
+    // de dominios del widget aquí; esto es lo que se lo dirá.
+    expect(opcionesReales().origin).toBe("*");
   });
 });

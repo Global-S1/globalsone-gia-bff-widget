@@ -2,14 +2,27 @@ import { BaseServiceClient } from "./base-service-client";
 import { getServiceConfig, ServiceKeys } from "../config/backend-services.config";
 import { IRequestContext } from "../../domain/interfaces/request-context.interface";
 import { IServiceResponse } from "../../domain/interfaces/service-response.interface";
+import { IServiceConfig } from "../../domain/interfaces/service-client.interface";
 import { env } from "../../../entities/shared/infraestructure/config/environments";
 import { IWidgetConfig } from "../../domain/interfaces/widget-config.interface";
 import type { Dispatcher } from "undici";
 
 export interface ICreateChatParams {
   message: string;
-  /** Token de organización del widget (unique_organization_token). */
-  uniqueToken: string;
+  /**
+   * La organización, cuando se ha resuelto el widget (SPEC-195 · SPEC-203).
+   *
+   * **Es la preferida**: el ámbito sale de una señal que el llamante no
+   * controla (RF-008), que es la regla de la casa y como ya se identifican
+   * ms-documents, ms-customers, ms-messaging y ms-leads.
+   */
+  organizacionId?: string;
+  /**
+   * Token de organización del widget (unique_organization_token). El camino de
+   * compatibilidad: lo manda el fragmento antiguo, y se usa **sólo** cuando no
+   * hemos podido resolver el widget.
+   */
+  uniqueToken?: string;
   /** Agente entrenado al que apuntar en el primer turno. */
   agentId?: string;
   /** Sesión existente para encadenar memoria multi-turno. */
@@ -38,8 +51,14 @@ export interface ICreateChatParams {
  * partir del token de organización + el canal.
  */
 export class AgentsServiceClient extends BaseServiceClient {
-  constructor() {
-    super(getServiceConfig(ServiceKeys.AGENTS));
+  /**
+   * La configuración se puede inyectar, igual que en los clientes de ms-leads y
+   * ms-documents. Sin eso, este cliente sólo es construible con el fichero de
+   * servicios cargado, y sus rutas —que es lo que más se equivoca— quedan sin
+   * poder probarse.
+   */
+  constructor(config?: IServiceConfig) {
+    super(config ?? getServiceConfig(ServiceKeys.AGENTS));
   }
 
   async getStats(context: IRequestContext): Promise<IServiceResponse<any>> {
@@ -50,8 +69,16 @@ export class AgentsServiceClient extends BaseServiceClient {
   }
 
   /**
-   * SPEC-162 — la configuración de widget de un agente, para decidir por qué
-   * puerta entra su visitante (SPEC-167 · ADR-034).
+   * SPEC-195 · ADR-037 — quién es este widget: su agente, su organización, si
+   * está activo y por qué puerta entra su visitante (SPEC-167 · ADR-034).
+   *
+   * **La ruta es la del widget y ya no la del agente.** El widget es una
+   * entidad desde SPEC-192, y `:id` vale como identificador de widget **o** de
+   * agente: cuando es un agente, ms-agents devuelve su widget por defecto —el
+   * más antiguo—, que es lo que sostiene los fragmentos ya pegados en webs de
+   * clientes. La vieja `/v1/agents/:id/widget-config` comparte manejador y no
+   * difiere en nada, así que este cambio no puede alterar comportamiento; se
+   * deja de usar aquí porque su retirada es de este SPEC.
    *
    * Trae `organizationId`, y eso es lo que la hace imprescindible: este BFF
    * tiene un TOKEN de organización, que identifica pero no dice cuál es, y
@@ -61,13 +88,13 @@ export class AgentsServiceClient extends BaseServiceClient {
    * token del widget. Sin él, 403.
    */
   async getWidgetConfig(
-    agentId: string,
+    identificador: string,
     context: IRequestContext
   ): Promise<IServiceResponse<IWidgetConfig>> {
     return this.request<IWidgetConfig>(
       {
         method: "GET",
-        path: `/v1/agents/${encodeURIComponent(agentId)}/widget-config`,
+        path: `/v1/widgets/${encodeURIComponent(identificador)}/config`,
         // Un reintento y no dos: esta consulta va DELANTE de la respuesta al
         // visitante, y su fallo no le deja sin contestar —se cae al camino de
         // hoy—, así que esperar de más aquí sólo alarga el silencio.
@@ -78,6 +105,40 @@ export class AgentsServiceClient extends BaseServiceClient {
         },
       },
       context
+    );
+  }
+
+  /**
+   * SPEC-202 · RF-025 · ADR-038 — apunta desde dónde se cargó este widget.
+   *
+   * Se le manda **el dominio ya extraído**, aunque la ruta admita también una
+   * dirección completa: lo que sale de este servicio es lo que se va a guardar,
+   * y no hay razón para que cruce la red un camino o una consulta que allí se
+   * van a tirar.
+   *
+   * `anotado` dice si escribió o si lo frenó — **el freno vive allí**
+   * (SPEC-202), que es el único que sabe cuándo se escribió por última vez.
+   *
+   * **Sin reintentos y con poca espera**: es una observación que nadie está
+   * mirando, y va en el mismo camino por el que alguien espera una respuesta.
+   */
+  async apuntarVisto(
+    widgetId: string,
+    dominio: string,
+    context: IRequestContext
+  ): Promise<IServiceResponse<{ anotado: boolean }>> {
+    return this.request<{ anotado: boolean }>(
+      {
+        method: "POST",
+        path: `/v1/widgets/${encodeURIComponent(widgetId)}/visto`,
+        retries: 0,
+        timeout: 3000,
+        headers: {
+          "x-internal-service-token": env.internalServiceToken ?? "",
+        },
+        body: { origin: dominio },
+      },
+      { correlationId: context.correlationId, timestamp: context.timestamp }
     );
   }
 
@@ -98,7 +159,6 @@ export class AgentsServiceClient extends BaseServiceClient {
       Accept: "text/plain",
       // Identity translation: el token del widget identifica la organización.
       // OJO: identifica, no autoriza. Ver el comentario de la clase.
-      "x-unique-token": params.uniqueToken,
       // Marca de canal: ms-agents aplica el tope diario por usuario final (IP)
       // solo cuando el canal es widget, y es una de las tres condiciones que
       // `chat-access.middleware.ts` exige para admitir un visitante anónimo.
@@ -109,6 +169,20 @@ export class AgentsServiceClient extends BaseServiceClient {
       // coincidir con el INTERNAL_SERVICE_TOKEN de ms-agents.
       "x-internal-service-token": env.internalServiceToken ?? "",
     };
+
+    // **El ámbito de organización: una señal y no dos** (SPEC-203).
+    //
+    // ms-agents admite `x-tenant-id` (preferido) o `x-unique-token`, y se le
+    // manda UNA. Mandar las dos es lo que hasta hoy devolvía un 200 con la
+    // segunda ignorada en silencio y ahora se rechaza si discrepan — y aquí
+    // pueden discrepar de verdad: el token lo pega una persona en el HTML de su
+    // web y la organización sale de resolver el widget. Cuando hemos resuelto,
+    // la buena es la resuelta.
+    if (params.organizacionId) {
+      headers["x-tenant-id"] = params.organizacionId;
+    } else if (params.uniqueToken) {
+      headers["x-unique-token"] = params.uniqueToken;
+    }
 
     if (params.ipAddress) {
       headers["ip-address"] = params.ipAddress;
