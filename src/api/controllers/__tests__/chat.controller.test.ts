@@ -1410,3 +1410,152 @@ describe("SPEC-196 · atender sólo desde lo registrado", () => {
     await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
   });
 });
+
+describe("SPEC-221 · decir de quién es cada mensaje", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    limpiarCacheDeConfiguracionDeWidget();
+    createChatStream.mockResolvedValue(respuestaDeAgents());
+    getWidgetConfig.mockResolvedValue(configuracion(false));
+    atenderMensajeDelWidget.mockResolvedValue(respuestaDeLeads());
+  });
+
+  it("Se manda el widget resuelto", async () => {
+    await createChat(
+      peticionSinToken({ widgetId: WIDGET, visitanteId: VISITANTE }),
+      comoRespuesta(respuesta()),
+    );
+
+    expect(createChatStream).toHaveBeenCalledWith(
+      expect.objectContaining({ widgetId: WIDGET }),
+    );
+  });
+
+  it("Y quién lo escribe", async () => {
+    await createChat(
+      peticionSinToken({ widgetId: WIDGET, visitanteId: VISITANTE }),
+      comoRespuesta(respuesta()),
+    );
+
+    expect(createChatStream).toHaveBeenCalledWith(
+      expect.objectContaining({ visitanteId: VISITANTE }),
+    );
+  });
+
+  it("Sin identificador de visitante se atiende igual", async () => {
+    // **Y no se inventa ninguno.** Un identificador por defecto convertiría a
+    // todos los visitantes desconocidos en el mismo, que es justo el defecto
+    // que esto viene a corregir. Y una cadena vacía sería un 400 de ms-agents
+    // (SPEC-220), o sea, dejar mudo un widget sano por un dato que sobra.
+    const res = respuesta();
+
+    await createChat(peticionSinToken({ widgetId: WIDGET }), comoRespuesta(res));
+
+    expect(createChatStream).toHaveBeenCalledTimes(1);
+    const [params] = createChatStream.mock.calls[0] as [Record<string, unknown>];
+    expect(params.visitanteId).toBeUndefined();
+    await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+  });
+
+  it("Un visitante de sólo espacios no es un visitante", async () => {
+    await createChat(
+      peticionSinToken({ widgetId: WIDGET, visitanteId: "   " }),
+      comoRespuesta(respuesta()),
+    );
+
+    const [params] = createChatStream.mock.calls[0] as [Record<string, unknown>];
+    expect(params.visitanteId).toBeUndefined();
+  });
+
+  it("Un fragmento que no resuelve no atribuye", async () => {
+    // SPEC-167 sigue mandando: un tropiezo de ms-agents no deja mudo el chat.
+    // Lo que no se puede es atribuirle un widget que no hemos resuelto.
+    getWidgetConfig.mockResolvedValue({
+      success: false,
+      statusCode: 503,
+      duration: 1,
+      error: { code: "CONNECTION_ERROR", message: "no hay nadie", service: "ms-agents" },
+    });
+    const res = respuesta();
+
+    await createChat(
+      peticion({ widgetId: WIDGET, visitanteId: VISITANTE }),
+      comoRespuesta(res),
+    );
+
+    expect(createChatStream).toHaveBeenCalledTimes(1);
+    const [params] = createChatStream.mock.calls[0] as [Record<string, unknown>];
+    expect(params.widgetId).toBeUndefined();
+    await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+  });
+
+  it("Sin nada que resolver tampoco se atribuye, pero sí se dice quién escribe", async () => {
+    // El fragmento más antiguo de todos: sólo el token de organización. No hay
+    // widget que decir, y el visitante sí se sabe.
+    const res = respuesta();
+
+    await createChat(peticion({ visitanteId: VISITANTE }), comoRespuesta(res));
+
+    expect(getWidgetConfig).not.toHaveBeenCalled();
+    const [params] = createChatStream.mock.calls[0] as [Record<string, unknown>];
+    expect(params.widgetId).toBeUndefined();
+    expect(params.visitanteId).toBe(VISITANTE);
+  });
+
+  it("Un fragmento antiguo atribuye al widget resuelto y NO al agente que mandó", async () => {
+    // Lo que llega en el cuerpo es el identificador del AGENTE, y ms-agents
+    // resuelve su widget por defecto. Guardar lo que vino en vez de lo
+    // resuelto metería un identificador de agente en la columna del widget:
+    // la auditoría de ese widget saldría vacía para siempre.
+    await createChat(
+      peticion({ agentId: AGENTE, visitanteId: VISITANTE }),
+      comoRespuesta(respuesta()),
+    );
+
+    const [params] = createChatStream.mock.calls[0] as [Record<string, unknown>];
+    expect(params.widgetId).toBe(WIDGET);
+    expect(params.widgetId).not.toBe(AGENTE);
+  });
+
+  it("El camino de leads también lo dice", async () => {
+    // Si sólo atribuyera el camino del agente, encender la clasificación de
+    // leads volvería un widget MENOS auditable que uno sin ella.
+    getWidgetConfig.mockResolvedValue(configuracion(true));
+
+    await createChat(
+      peticionSinToken({ widgetId: WIDGET, visitanteId: VISITANTE }),
+      comoRespuesta(respuesta()),
+    );
+
+    expect(createChatStream).not.toHaveBeenCalled();
+    expect(atenderMensajeDelWidget).toHaveBeenCalledWith(
+      expect.objectContaining({ widgetId: WIDGET, visitanteId: VISITANTE }),
+      expect.anything(),
+    );
+  });
+
+  it("Un widget con leads encendido pero sin visitante atribuye igual por el agente", async () => {
+    // Se cae al camino de ms-agents (SPEC-167), y eso no puede costar la
+    // atribución: el widget se sabe igual.
+    getWidgetConfig.mockResolvedValue(configuracion(true));
+
+    await createChat(peticionSinToken({ widgetId: WIDGET }), comoRespuesta(respuesta()));
+
+    expect(createChatStream).toHaveBeenCalledWith(
+      expect.objectContaining({ widgetId: WIDGET }),
+    );
+  });
+
+  it("Nada de esto cambia lo que ve quien conversa", async () => {
+    const res = respuesta();
+
+    await createChat(
+      peticionSinToken({ widgetId: WIDGET, visitanteId: VISITANTE }),
+      comoRespuesta(res),
+    );
+
+    expect(res.cabeceras["Content-Type"]).toBe("text/plain; charset=utf-8");
+    expect(res.cabeceras["Chat-Session-Id"]).toBe("sesion-1");
+    await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+  });
+});

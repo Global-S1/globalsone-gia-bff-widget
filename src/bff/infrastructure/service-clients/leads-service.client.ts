@@ -23,6 +23,19 @@ export interface IMensajeDelWidget {
   readonly texto: string;
   /** Desde dónde escribe, para que el tope diario por IP de ms-agents siga vivo. */
   readonly ip?: string;
+  /**
+   * SPEC-221 — el widget ya resuelto por el que entra el mensaje.
+   *
+   * **Por este camino este BFF no abre la conversación de ms-agents**: la abre
+   * ms-leads, que es su único dueño (ADR-034) y quien llama a la ruta de
+   * campos. Lo que a este borde le toca es no tirar el dato que sólo él sabe;
+   * que llegue hasta la columna depende de que ms-leads lo reenvíe.
+   *
+   * Va aquí y no en `x-tenant-id` ni en otra cabecera: no es una señal de
+   * ámbito, es un dato de la conversación. La organización sigue siendo la
+   * única que viaja fuera del cuerpo (RF-008).
+   */
+  readonly widgetId?: string;
 }
 
 /**
@@ -123,6 +136,10 @@ export class LeadsServiceClient extends BaseServiceClient {
           visitanteId: params.visitanteId,
           texto: params.texto,
           ...(params.ip ? { ip: params.ip } : {}),
+          // Ausente cuando no se sabe, nunca vacío: por el mismo motivo que en
+          // el otro camino, un identificador en blanco es un cuarto estado que
+          // al leerse se confunde con «no se sabe» (SPEC-220).
+          ...(params.widgetId?.trim() ? { widgetId: params.widgetId.trim() } : {}),
         },
       },
       // **El contexto se poda a propósito.** El cliente base añade `X-User-ID`

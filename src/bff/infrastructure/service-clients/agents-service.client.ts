@@ -29,6 +29,34 @@ export interface ICreateChatParams {
   chatPerUserId?: string;
   /** IP del usuario final (para rate-limit / auditoría en ms-agents). */
   ipAddress?: string;
+  /**
+   * SPEC-221 · SPEC-220 — **el widget ya resuelto** por el que entra el mensaje.
+   *
+   * Nunca el identificador que vino en el cuerpo: un fragmento antiguo manda el
+   * del agente, y guardar ése metería un agente en la columna del widget. Sale
+   * de la resolución o no va.
+   */
+  widgetId?: string;
+  /**
+   * SPEC-221 — quién escribe: el identificador que el widget conserva en el
+   * navegador. Se llama `visitanteId` de este lado (SPEC-181) y `visitorId` en
+   * el cuerpo que espera ms-agents; la traducción se hace aquí, que es donde
+   * vive ese contrato.
+   */
+  visitanteId?: string;
+}
+
+/**
+ * Un identificador que se puede mandar, o nada.
+ *
+ * ms-agents responde **400 nombrando el campo** a un `widgetId` o un
+ * `visitorId` vacío o de sólo espacios (SPEC-220), y un 400 en esta llamada
+ * deja sin respuesta a quien está conversando. Ausente significa «no lo sé» y
+ * se atiende igual; vacío no significa nada y rompe.
+ */
+function identificadorQueSePuedeMandar(valor: string | undefined): string | null {
+  const limpio = typeof valor === "string" ? valor.trim() : "";
+  return limpio === "" ? null : limpio;
 }
 
 /**
@@ -204,6 +232,33 @@ export class AgentsServiceClient extends BaseServiceClient {
       payload.chatPerUserId = params.chatPerUserId;
     } else if (params.agentId) {
       payload.agentId = params.agentId;
+    }
+
+    // **De qué widget viene y quién escribe** (SPEC-221 · SPEC-220).
+    //
+    // Van en el CUERPO y no en una cabecera porque es donde ms-agents los
+    // declara, en el validador que comparten la ruta corriente y la de
+    // respuesta estructurada. Ese validador **descarta en silencio lo que no
+    // conoce**: un nombre equivocado aquí no da error en ningún sitio, sólo
+    // deja la columna vacía para siempre y la auditoría del widget en blanco.
+    //
+    // `x-user-id` **no se toca**, aunque sea lo que hoy hace que todas las
+    // conversaciones de un widget parezcan la misma persona: de esa cabecera
+    // cuelgan el guard de canal anónimo de ms-agents y a quién se le imputa la
+    // cuota. Quién escribió se dice por el cuerpo, que es donde SPEC-220 lo
+    // pide, y así esto no cambia nada de lo que ya funciona.
+    //
+    // Se mandan también al continuar: ms-agents marca las columnas **al nacer**
+    // y no las reescribe, así que mandarlas siempre no puede alterar lo ya
+    // guardado — y no mandarlas obligaría a este borde a adivinar cuál es el
+    // primer turno, que es justo lo que `chatPerUserId` no dice con certeza.
+    const widget = identificadorQueSePuedeMandar(params.widgetId);
+    if (widget) {
+      payload.widgetId = widget;
+    }
+    const visitante = identificadorQueSePuedeMandar(params.visitanteId);
+    if (visitante) {
+      payload.visitorId = visitante;
     }
 
     return request(url, {
