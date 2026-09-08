@@ -44,6 +44,14 @@ import {
  * nadie — ni al modelo ni a la cuota. La decisión se toma **aquí dentro** y el
  * CORS se queda abierto a propósito.
  *
+ * **Desde SPEC-221 el mensaje dice de quién es** (SPEC-220): al hablar con el
+ * servicio del agente van, además, el widget ya resuelto y el identificador de
+ * visitante. Los dos son datos que sólo este borde tiene delante y que hasta
+ * hoy se tiraban aquí, y **por los dos caminos por igual** — el del agente y el
+ * de leads—: si sólo atribuyera uno, encender la clasificación de leads
+ * volvería un widget menos auditable que uno sin ella. Nada de esto cambia lo
+ * que ve quien conversa.
+ *
  * Entrada (widget):
  *   headers: `unique-tenant-token` (sólo compatibilidad), `ip-address`,
  *            `Origin` (lo pone el navegador; se apunta su dominio, RF-025)
@@ -183,6 +191,17 @@ export async function createChat(req: Request, res: Response): Promise<void> {
   // cuanto sabemos quién es el widget (SPEC-203).
   let organizacionDelWidget: string | undefined;
 
+  // **El widget al que atribuir la conversación** (SPEC-221 · SPEC-220).
+  //
+  // Sale de la resolución y **nunca del cuerpo**: `identificador` puede ser el
+  // del agente —el fragmento antiguo—, y guardar ése metería un identificador
+  // de agente en la columna del widget, dejando vacía para siempre la auditoría
+  // del widget que de verdad atendió.
+  //
+  // Se queda sin valor cuando no se ha podido resolver, que es lo que pide el
+  // SPEC: sin resolución no se dice ningún widget y se atiende como hasta ahora.
+  let widgetAlQueAtribuir: string | undefined;
+
   if (identificador) {
     const resolucion = await resolverWidget(identificador, context);
 
@@ -198,6 +217,7 @@ export async function createChat(req: Request, res: Response): Promise<void> {
       const configuracion = resolucion.config;
       agenteDelWidget = configuracion.agentId;
       organizacionDelWidget = configuracion.organizationId;
+      widgetAlQueAtribuir = configuracion.widgetId;
 
       // **Desde dónde se está cargando** (RF-025 · ADR-038). Va aquí, en cuanto
       // se sabe de qué widget es, y **antes de mirar si está activo**: lo que
@@ -257,6 +277,11 @@ export async function createChat(req: Request, res: Response): Promise<void> {
             visitanteId,
             texto: message,
             ...(ipAddress ? { ip: ipAddress } : {}),
+            // **Los dos caminos atribuyen igual** (SPEC-221). Si sólo lo
+            // hiciera el del agente, encender la clasificación de leads
+            // volvería un widget MENOS auditable que uno sin ella, que es lo
+            // contrario de lo que se busca.
+            widgetId: configuracion.widgetId,
           });
           return;
         }
@@ -283,12 +308,21 @@ export async function createChat(req: Request, res: Response): Promise<void> {
     agentId: agenteDelWidget,
     chatPerUserId: chatSessionId,
     ipAddress,
+    // **De quién es este mensaje** (SPEC-221). Los dos se pasan cuando se
+    // tienen y **no se inventan cuando no**: un identificador por defecto
+    // convertiría a todos los visitantes desconocidos en el mismo, que es justo
+    // el defecto que esto viene a corregir.
+    ...(widgetAlQueAtribuir ? { widgetId: widgetAlQueAtribuir } : {}),
+    ...(visitanteId ? { visitanteId } : {}),
   });
 }
 
 /**
- * El camino de hoy: ms-agents, servido según se escribe. **No cambia.** Hay
- * escenarios de SPEC-167 que lo exigen tal cual.
+ * El camino de hoy: ms-agents, servido según se escribe. **No cambia lo que
+ * lee quien conversa**, y hay escenarios de SPEC-167 que lo exigen tal cual.
+ *
+ * Desde SPEC-221 lleva dos datos más sobre la conversación —el widget y el
+ * visitante—, que ms-agents guarda al nacer y no devuelve a nadie por aquí.
  */
 async function atenderPorAgents(
   res: Response,
@@ -299,6 +333,10 @@ async function atenderPorAgents(
     agentId?: string;
     chatPerUserId?: string;
     ipAddress?: string;
+    /** SPEC-221 — el widget resuelto, o nada si no se ha podido resolver. */
+    widgetId?: string;
+    /** SPEC-221 — quién escribe, o nada si el widget no lo mandó. */
+    visitanteId?: string;
   }
 ): Promise<void> {
   try {
@@ -364,6 +402,8 @@ async function atenderPorLeads(
     visitanteId: string;
     texto: string;
     ip?: string;
+    /** SPEC-221 — el widget resuelto, para que este camino atribuya igual. */
+    widgetId?: string;
   }
 ): Promise<void> {
   let respuesta: IServiceResponse<IRespuestaDeLeads>;
