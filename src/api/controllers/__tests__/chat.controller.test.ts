@@ -1559,3 +1559,191 @@ describe("SPEC-221 · decir de quién es cada mensaje", () => {
     await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
   });
 });
+
+/**
+ * SPEC-227 — el borde declara el widget desconocido cuando no puede resolverlo.
+ *
+ * Este borde es **el único que tiene las dos mitades de la frase**: sabe que la
+ * petición entró por la puerta del widget, y sabe que no ha podido resolver
+ * cuál. Callarse la segunda mitad no deja la conversación sin widget: la deja
+ * afirmando que no vino de ninguno, que es una afirmación falsa y que la borra
+ * de la auditoría del widget que sí la atendió.
+ *
+ * Lo que se comprueba aquí es **la decisión**: qué se le pasa al cliente de
+ * ms-agents. Cómo se traduce eso al cable (`widgetUnknown`) se prueba en
+ * `agents-service.client.test.ts`, que es donde vive ese contrato.
+ */
+describe("SPEC-227 · declarar el widget desconocido", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    limpiarCacheDeConfiguracionDeWidget();
+    createChatStream.mockResolvedValue(respuestaDeAgents());
+    getWidgetConfig.mockResolvedValue(configuracion(false));
+    atenderMensajeDelWidget.mockResolvedValue(respuestaDeLeads());
+  });
+
+  /** Lo que se le pasó al camino de ms-agents en la llamada número `n`. */
+  function loQueSeMando(n = 0): Record<string, unknown> {
+    const [params] = createChatStream.mock.calls[n] as [Record<string, unknown>];
+    return params;
+  }
+
+  it("Si resolver tropieza, se declara desconocido", async () => {
+    // El servicio de configuración no contesta. Esto ya se atendía igual
+    // (SPEC-167: un tropiezo no puede dejar mudo el chat de un cliente), y ahí
+    // estaba el defecto: se atendía **afirmando que no vino de ningún widget**.
+    // Un tropiezo de un segundo en un servicio nuestro no puede reescribir de
+    // dónde vino la conversación de un cliente.
+    getWidgetConfig.mockResolvedValue({
+      success: false,
+      statusCode: 503,
+      duration: 1,
+      error: { code: "CONNECTION_ERROR", message: "no hay nadie", service: "ms-agents" },
+    });
+    const res = respuesta();
+
+    await createChat(peticion({ widgetId: WIDGET }), comoRespuesta(res));
+
+    expect(loQueSeMando().widgetDesconocido).toBe(true);
+    // Y se sigue atendiendo, que es la mitad que ya funcionaba.
+    expect(createChatStream).toHaveBeenCalledTimes(1);
+    await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+  });
+
+  it("Si resolver tropieza, se declara desconocido — también cuando la consulta revienta", async () => {
+    // El mismo escenario por el otro camino: no un 5xx, sino una excepción
+    // —tiempo de espera agotado, DNS, conexión cortada—. Los dos acaban en
+    // `no-se-sabe` (SPEC-195) y los dos entraron por la puerta del widget, así
+    // que los dos se declaran. Si sólo se cubriera uno, el día que el fallo
+    // llegue por el otro volvemos a afirmar «ninguno».
+    getWidgetConfig.mockRejectedValue(new Error("se agotó la espera"));
+    const res = respuesta();
+
+    await createChat(peticion({ widgetId: WIDGET }), comoRespuesta(res));
+
+    expect(loQueSeMando().widgetDesconocido).toBe(true);
+    await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+  });
+
+  it("Un fragmento antiguo también", async () => {
+    // Sólo el token de organización: ni widget ni agente, así que no hay nada
+    // que resolver y no se pregunta. **Pero vino por la puerta del widget
+    // igual**, y eso es justo lo que sólo este borde sabe. «No he podido
+    // resolverlo» y «no vino de ningún widget» no son la misma frase.
+    const res = respuesta();
+
+    await createChat(peticion({ visitanteId: VISITANTE }), comoRespuesta(res));
+
+    expect(getWidgetConfig).not.toHaveBeenCalled();
+    expect(loQueSeMando().widgetDesconocido).toBe(true);
+    expect(loQueSeMando().widgetId).toBeUndefined();
+    await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+  });
+
+  it("Resuelto, se dice cuál", async () => {
+    // Cuando se sabe, se dice el identificador y **no se declara nada**:
+    // declarar aquí sería mentir en el otro sentido, y además lo rechazaría el
+    // otro lado. Se comprueba «no es `true`» y no «no está»: ausente y `false`
+    // significan lo mismo del otro lado (SPEC-226), así que exigir cuál de los
+    // dos se manda ataría la implementación sin proteger nada.
+    await createChat(
+      peticionSinToken({ widgetId: WIDGET, visitanteId: VISITANTE }),
+      comoRespuesta(respuesta()),
+    );
+
+    expect(loQueSeMando().widgetId).toBe(WIDGET);
+    expect(loQueSeMando().widgetDesconocido).not.toBe(true);
+  });
+
+  it("Nunca las dos cosas a la vez", async () => {
+    // El otro lado responde **400** a un cuerpo que trae el identificador y la
+    // declaración juntos (SPEC-226), y con razón: es una contradicción. Pero un
+    // 400 aquí deja sin respuesta a quien está conversando con un widget sano,
+    // así que la exclusión se garantiza desde este lado y no se confía en que
+    // el de allá perdone.
+    //
+    // Se miran los dos desenlaces en la misma prueba porque lo que se afirma es
+    // sobre los dos a la vez: **exactamente una** de las dos señales, nunca las
+    // dos y nunca ninguna, cuando se entró por la puerta del widget.
+    await createChat(peticionSinToken({ widgetId: WIDGET }), comoRespuesta(respuesta()));
+
+    // Y el mismo widget sin poder resolverse. Se vacía lo recordado: si no, la
+    // segunda llamada se contestaría con lo que resolvió la primera y esta
+    // prueba estaría mirando dos veces el mismo desenlace.
+    limpiarCacheDeConfiguracionDeWidget();
+    getWidgetConfig.mockResolvedValue({
+      success: false,
+      statusCode: 503,
+      duration: 1,
+      error: { code: "CONNECTION_ERROR", message: "no hay nadie", service: "ms-agents" },
+    });
+    await createChat(peticionSinToken({ widgetId: WIDGET }), comoRespuesta(respuesta()));
+
+    expect(createChatStream).toHaveBeenCalledTimes(2);
+    for (const n of [0, 1]) {
+      const params = loQueSeMando(n);
+      const dice = params.widgetId !== undefined;
+      const declara = params.widgetDesconocido === true;
+      expect(dice && declara).toBe(false);
+      expect(dice || declara).toBe(true);
+    }
+  });
+
+  it("Un widget que no existe no declara nada, porque no hay conversación", async () => {
+    // `no-existe` no es `no-se-sabe` (SPEC-195): aquí sí lo sabemos, y lo que
+    // sabemos es que ese identificador no es de nadie. Se contesta 404 y no se
+    // abre conversación ninguna, así que no hay nada de lo que declarar el
+    // origen. Declarar aquí sería grabar una conversación que no existe.
+    getWidgetConfig.mockResolvedValue(noResuelve());
+    const res = respuesta();
+
+    await createChat(peticionSinToken({ widgetId: WIDGET }), comoRespuesta(res));
+
+    expect(res.codigo).toBe(404);
+    expect(createChatStream).not.toHaveBeenCalled();
+  });
+
+  it("Nada de esto cambia lo que ve quien conversa", async () => {
+    // Esto es información **sobre** la conversación, no **de** la conversación:
+    // quien escribe lee exactamente lo mismo que leía ayer, con las mismas
+    // cabeceras. Se prueba sobre el caso que cambia —el que no resuelve—,
+    // porque es el único donde algo nuevo viaja.
+    getWidgetConfig.mockResolvedValue({
+      success: false,
+      statusCode: 503,
+      duration: 1,
+      error: { code: "CONNECTION_ERROR", message: "no hay nadie", service: "ms-agents" },
+    });
+    const res = respuesta();
+
+    await createChat(
+      peticion({ widgetId: WIDGET, visitanteId: VISITANTE }),
+      comoRespuesta(res),
+    );
+
+    expect(res.cabeceras["Content-Type"]).toBe("text/plain; charset=utf-8");
+    expect(res.cabeceras["Chat-Session-Id"]).toBe("sesion-1");
+    await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+  });
+
+  it("El camino de leads sigue como estaba y no declara nada", async () => {
+    // Está fuera del alcance del SPEC a propósito: por leads sólo se pasa con
+    // el widget ya resuelto —sin resolverlo no se sabe siquiera que clasifica
+    // leads—, así que ahí nunca hay nada que declarar. Se prueba para que la
+    // declaración no se cuele por un camino donde no tiene sentido.
+    getWidgetConfig.mockResolvedValue(configuracion(true));
+
+    await createChat(
+      peticionSinToken({ widgetId: WIDGET, visitanteId: VISITANTE }),
+      comoRespuesta(respuesta()),
+    );
+
+    expect(createChatStream).not.toHaveBeenCalled();
+    expect(atenderMensajeDelWidget).toHaveBeenCalledWith(
+      expect.objectContaining({ widgetId: WIDGET, visitanteId: VISITANTE }),
+      expect.anything(),
+    );
+    const [mensaje] = atenderMensajeDelWidget.mock.calls[0] as [Record<string, unknown>];
+    expect(mensaje.widgetDesconocido).toBeUndefined();
+  });
+});

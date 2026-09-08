@@ -38,6 +38,21 @@ export interface ICreateChatParams {
    */
   widgetId?: string;
   /**
+   * SPEC-227 · SPEC-226 — **«vino por un widget y no sé cuál».**
+   *
+   * El tercer estado de la columna de SPEC-220, y **el borde es el único que lo
+   * puede decir**: sabe que la petición entró por la puerta del widget aunque
+   * no haya podido resolverlo. Sin esto, esa conversación se graba con el
+   * centinela «no vino de ningún widget» y desaparece de la auditoría de su
+   * widget contada como si fuera de otro sitio.
+   *
+   * Viaja como `widgetUnknown` en el cuerpo —la traducción se hace aquí, igual
+   * que la de `visitanteId`— y **sólo cuando no se manda `widgetId`**: los dos
+   * juntos son un 400 de ms-agents, y un 400 en esta llamada deja sin respuesta
+   * a quien está conversando.
+   */
+  widgetDesconocido?: boolean;
+  /**
    * SPEC-221 — quién escribe: el identificador que el widget conserva en el
    * navegador. Se llama `visitanteId` de este lado (SPEC-181) y `visitorId` en
    * el cuerpo que espera ms-agents; la traducción se hace aquí, que es donde
@@ -252,9 +267,37 @@ export class AgentsServiceClient extends BaseServiceClient {
     // y no las reescribe, así que mandarlas siempre no puede alterar lo ya
     // guardado — y no mandarlas obligaría a este borde a adivinar cuál es el
     // primer turno, que es justo lo que `chatPerUserId` no dice con certeza.
+    //
+    // **Y cuándo no se sabe cuál** (SPEC-227 · SPEC-226): `widgetUnknown` es el
+    // tercer estado, el que separa «no vino de ningún widget» de «no sabemos de
+    // cuál vino». Sin él, ms-agents escribe el centinela de «ninguno» y la
+    // conversación desaparece de la auditoría de su widget.
+    //
+    // **La exclusión es estructural y se decide aquí**, en el único sitio por
+    // el que pasan todos los llamantes: un `else if` y no dos `if`. Las dos
+    // señales en el mismo cuerpo son un **400** del otro lado —una
+    // contradicción, y la rechaza con razón—, y un 400 en esta llamada deja sin
+    // respuesta a quien está conversando con un widget sano. Garantizarlo donde
+    // se arma el cuerpo, y no confiarlo a quien llama, es lo que hace que
+    // ninguna rama futura del controlador pueda provocar ese 400.
+    //
+    // Y se decide sobre **lo que de verdad se manda**, no sobre lo que llegó.
+    // Un `widgetId` de sólo espacios no se manda —sería otro 400 (SPEC-221)—,
+    // así que mirar el parámetro en vez del cuerpo dejaría ese caso sin
+    // ninguna de las dos señales: afirmando «ninguno» otra vez. Hoy el
+    // controlador no puede producir esa combinación —apaga la declaración en la
+    // misma línea en que resuelve el widget—, y por eso esto es una condición
+    // de la garantía y no un caso de negocio: la sostiene sin depender de que
+    // quien llama siga comportándose como se comporta hoy.
+    //
+    // `false` no se manda nunca: del otro lado ausente, nulo y `false` son la
+    // misma cosa (SPEC-226), así que mandarlo sería un campo de más en el cable
+    // que no distingue nada.
     const widget = identificadorQueSePuedeMandar(params.widgetId);
     if (widget) {
       payload.widgetId = widget;
+    } else if (params.widgetDesconocido) {
+      payload.widgetUnknown = true;
     }
     const visitante = identificadorQueSePuedeMandar(params.visitanteId);
     if (visitante) {
