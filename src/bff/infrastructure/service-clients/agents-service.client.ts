@@ -29,6 +29,49 @@ export interface ICreateChatParams {
   chatPerUserId?: string;
   /** IP del usuario final (para rate-limit / auditoría en ms-agents). */
   ipAddress?: string;
+  /**
+   * SPEC-221 · SPEC-220 — **el widget ya resuelto** por el que entra el mensaje.
+   *
+   * Nunca el identificador que vino en el cuerpo: un fragmento antiguo manda el
+   * del agente, y guardar ése metería un agente en la columna del widget. Sale
+   * de la resolución o no va.
+   */
+  widgetId?: string;
+  /**
+   * SPEC-227 · SPEC-226 — **«vino por un widget y no sé cuál».**
+   *
+   * El tercer estado de la columna de SPEC-220, y **el borde es el único que lo
+   * puede decir**: sabe que la petición entró por la puerta del widget aunque
+   * no haya podido resolverlo. Sin esto, esa conversación se graba con el
+   * centinela «no vino de ningún widget» y desaparece de la auditoría de su
+   * widget contada como si fuera de otro sitio.
+   *
+   * Viaja como `widgetUnknown` en el cuerpo —la traducción se hace aquí, igual
+   * que la de `visitanteId`— y **sólo cuando no se manda `widgetId`**: los dos
+   * juntos son un 400 de ms-agents, y un 400 en esta llamada deja sin respuesta
+   * a quien está conversando.
+   */
+  widgetDesconocido?: boolean;
+  /**
+   * SPEC-221 — quién escribe: el identificador que el widget conserva en el
+   * navegador. Se llama `visitanteId` de este lado (SPEC-181) y `visitorId` en
+   * el cuerpo que espera ms-agents; la traducción se hace aquí, que es donde
+   * vive ese contrato.
+   */
+  visitanteId?: string;
+}
+
+/**
+ * Un identificador que se puede mandar, o nada.
+ *
+ * ms-agents responde **400 nombrando el campo** a un `widgetId` o un
+ * `visitorId` vacío o de sólo espacios (SPEC-220), y un 400 en esta llamada
+ * deja sin respuesta a quien está conversando. Ausente significa «no lo sé» y
+ * se atiende igual; vacío no significa nada y rompe.
+ */
+function identificadorQueSePuedeMandar(valor: string | undefined): string | null {
+  const limpio = typeof valor === "string" ? valor.trim() : "";
+  return limpio === "" ? null : limpio;
 }
 
 /**
@@ -204,6 +247,61 @@ export class AgentsServiceClient extends BaseServiceClient {
       payload.chatPerUserId = params.chatPerUserId;
     } else if (params.agentId) {
       payload.agentId = params.agentId;
+    }
+
+    // **De qué widget viene y quién escribe** (SPEC-221 · SPEC-220).
+    //
+    // Van en el CUERPO y no en una cabecera porque es donde ms-agents los
+    // declara, en el validador que comparten la ruta corriente y la de
+    // respuesta estructurada. Ese validador **descarta en silencio lo que no
+    // conoce**: un nombre equivocado aquí no da error en ningún sitio, sólo
+    // deja la columna vacía para siempre y la auditoría del widget en blanco.
+    //
+    // `x-user-id` **no se toca**, aunque sea lo que hoy hace que todas las
+    // conversaciones de un widget parezcan la misma persona: de esa cabecera
+    // cuelgan el guard de canal anónimo de ms-agents y a quién se le imputa la
+    // cuota. Quién escribió se dice por el cuerpo, que es donde SPEC-220 lo
+    // pide, y así esto no cambia nada de lo que ya funciona.
+    //
+    // Se mandan también al continuar: ms-agents marca las columnas **al nacer**
+    // y no las reescribe, así que mandarlas siempre no puede alterar lo ya
+    // guardado — y no mandarlas obligaría a este borde a adivinar cuál es el
+    // primer turno, que es justo lo que `chatPerUserId` no dice con certeza.
+    //
+    // **Y cuándo no se sabe cuál** (SPEC-227 · SPEC-226): `widgetUnknown` es el
+    // tercer estado, el que separa «no vino de ningún widget» de «no sabemos de
+    // cuál vino». Sin él, ms-agents escribe el centinela de «ninguno» y la
+    // conversación desaparece de la auditoría de su widget.
+    //
+    // **La exclusión es estructural y se decide aquí**, en el único sitio por
+    // el que pasan todos los llamantes: un `else if` y no dos `if`. Las dos
+    // señales en el mismo cuerpo son un **400** del otro lado —una
+    // contradicción, y la rechaza con razón—, y un 400 en esta llamada deja sin
+    // respuesta a quien está conversando con un widget sano. Garantizarlo donde
+    // se arma el cuerpo, y no confiarlo a quien llama, es lo que hace que
+    // ninguna rama futura del controlador pueda provocar ese 400.
+    //
+    // Y se decide sobre **lo que de verdad se manda**, no sobre lo que llegó.
+    // Un `widgetId` de sólo espacios no se manda —sería otro 400 (SPEC-221)—,
+    // así que mirar el parámetro en vez del cuerpo dejaría ese caso sin
+    // ninguna de las dos señales: afirmando «ninguno» otra vez. Hoy el
+    // controlador no puede producir esa combinación —apaga la declaración en la
+    // misma línea en que resuelve el widget—, y por eso esto es una condición
+    // de la garantía y no un caso de negocio: la sostiene sin depender de que
+    // quien llama siga comportándose como se comporta hoy.
+    //
+    // `false` no se manda nunca: del otro lado ausente, nulo y `false` son la
+    // misma cosa (SPEC-226), así que mandarlo sería un campo de más en el cable
+    // que no distingue nada.
+    const widget = identificadorQueSePuedeMandar(params.widgetId);
+    if (widget) {
+      payload.widgetId = widget;
+    } else if (params.widgetDesconocido) {
+      payload.widgetUnknown = true;
+    }
+    const visitante = identificadorQueSePuedeMandar(params.visitanteId);
+    if (visitante) {
+      payload.visitorId = visitante;
     }
 
     return request(url, {

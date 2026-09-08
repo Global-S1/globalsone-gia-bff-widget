@@ -201,3 +201,236 @@ describe("AgentsServiceClient · el ámbito del chat (SPEC-203)", () => {
     expect(opciones.headers["x-internal-service-token"]).toBe("secreto-compartido");
   });
 });
+
+/**
+ * SPEC-221 · SPEC-220 — de qué widget viene y quién escribe, en el cuerpo.
+ *
+ * Van **en el cuerpo y no en una cabecera**: es donde ms-agents los declara en
+ * su validador, compartido por la ruta corriente y la de respuesta
+ * estructurada. Lo que ese validador no conoce lo descarta en silencio, así que
+ * un nombre equivocado aquí no da error en ningún sitio: se traduce en una
+ * columna vacía para siempre y una auditoría que siempre sale en blanco.
+ */
+describe("AgentsServiceClient · quién escribe y por qué widget (SPEC-221)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    request.mockResolvedValue({ statusCode: 200, headers: {}, body: {} });
+  });
+
+  function cuerpoDeLaLlamada(): Record<string, unknown> {
+    const [, opciones] = request.mock.calls[0] as [string, Record<string, any>];
+    return JSON.parse(opciones.body as string) as Record<string, unknown>;
+  }
+
+  it("manda el widget en el cuerpo", async () => {
+    await cliente().createChatStream({
+      message: "hola",
+      organizacionId: "org-1",
+      agentId: "a-1",
+      widgetId: "w-1",
+    });
+
+    expect(cuerpoDeLaLlamada().widgetId).toBe("w-1");
+  });
+
+  it("manda el visitante como `visitorId`, que es como lo llama ms-agents", async () => {
+    // Aquí dentro se llama `visitanteId` —es el nombre con el que el widget lo
+    // manda y con el que ms-leads lo espera (SPEC-181)—, y en el cable de
+    // ms-agents es `visitorId`. La traducción vive en el borde con ese
+    // servicio, que es donde está su contrato.
+    await cliente().createChatStream({
+      message: "hola",
+      organizacionId: "org-1",
+      agentId: "a-1",
+      visitanteId: "v-abc",
+    });
+
+    const cuerpo = cuerpoDeLaLlamada();
+    expect(cuerpo.visitorId).toBe("v-abc");
+    expect(cuerpo.visitanteId).toBeUndefined();
+  });
+
+  it("lo que no se sabe no se manda: ni vacío ni nulo", async () => {
+    // ms-agents responde **400** a un `widgetId` o un `visitorId` vacío
+    // (SPEC-220), y un 400 aquí deja sin respuesta a quien escribe. Ausente es
+    // «no lo sé»; vacío es una avería.
+    await cliente().createChatStream({
+      message: "hola",
+      organizacionId: "org-1",
+      agentId: "a-1",
+    });
+
+    const cuerpo = cuerpoDeLaLlamada();
+    expect("widgetId" in cuerpo).toBe(false);
+    expect("visitorId" in cuerpo).toBe(false);
+  });
+
+  it("un identificador de sólo espacios no se manda", async () => {
+    await cliente().createChatStream({
+      message: "hola",
+      organizacionId: "org-1",
+      agentId: "a-1",
+      widgetId: "   ",
+      visitanteId: "  ",
+    });
+
+    const cuerpo = cuerpoDeLaLlamada();
+    expect("widgetId" in cuerpo).toBe(false);
+    expect("visitorId" in cuerpo).toBe(false);
+  });
+
+  it("viajan también al continuar una conversación", async () => {
+    // ms-agents marca las columnas **al nacer** y no las reescribe, así que
+    // mandarlas siempre no cambia nada de lo ya guardado; y no mandarlas en el
+    // segundo turno obligaría a este borde a saber cuál es el primero.
+    await cliente().createChatStream({
+      message: "hola",
+      organizacionId: "org-1",
+      chatPerUserId: "sesion-1",
+      widgetId: "w-1",
+      visitanteId: "v-abc",
+    });
+
+    const cuerpo = cuerpoDeLaLlamada();
+    expect(cuerpo.chatPerUserId).toBe("sesion-1");
+    expect(cuerpo.widgetId).toBe("w-1");
+    expect(cuerpo.visitorId).toBe("v-abc");
+  });
+
+  it("la identidad de usuario sigue siendo el agente", async () => {
+    // **No se toca `x-user-id`**, aunque sea lo que hace que todas las
+    // conversaciones de un widget parezcan la misma persona: de esa cabecera
+    // cuelgan el guard de canal anónimo y la atribución de cuota de ms-agents.
+    // Quién escribió se dice por el cuerpo, que es donde SPEC-220 lo pide.
+    await cliente().createChatStream({
+      message: "hola",
+      organizacionId: "org-1",
+      agentId: "a-1",
+      visitanteId: "v-abc",
+    });
+
+    const [, opciones] = request.mock.calls[0] as [string, Record<string, any>];
+    expect(opciones.headers["x-user-id"]).toBe("a-1");
+  });
+});
+
+/**
+ * SPEC-227 · SPEC-226 — declarar que se vino de un widget y no se sabe cuál.
+ *
+ * Aquí sólo se traduce: el borde decide (`widgetDesconocido`) y esto lo pone en
+ * el cable con el nombre que ms-agents espera (`widgetUnknown`). La traducción
+ * vive en este fichero por lo mismo que la de `visitorId`: es donde está el
+ * contrato con ese servicio.
+ *
+ * Y aquí se garantiza además **la exclusión mutua**, no en quien llama: un
+ * cuerpo con el identificador y la declaración a la vez es un **400** de
+ * ms-agents (SPEC-226), y un 400 en esta llamada deja sin respuesta a quien
+ * está conversando con un widget que funciona. La red se pone donde se arma el
+ * cuerpo, que es el único sitio por el que pasan todos los llamantes.
+ */
+describe("AgentsServiceClient · declarar el widget desconocido (SPEC-227)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    request.mockResolvedValue({ statusCode: 200, headers: {}, body: {} });
+  });
+
+  function cuerpoDeLaLlamada(): Record<string, unknown> {
+    const [, opciones] = request.mock.calls[0] as [string, Record<string, any>];
+    return JSON.parse(opciones.body as string) as Record<string, unknown>;
+  }
+
+  it("Si resolver tropieza, se declara desconocido", async () => {
+    // El borde no pudo resolver el widget, así que no manda identificador: lo
+    // que manda es la afirmación de que hubo uno. Sin ella, ms-agents guarda su
+    // centinela de «no vino de ningún widget», que es una respuesta distinta y
+    // falsa a la pregunta que la auditoría hace.
+    await cliente().createChatStream({
+      message: "hola",
+      uniqueToken: "token-de-organizacion",
+      agentId: "a-1",
+      widgetDesconocido: true,
+    });
+
+    expect(cuerpoDeLaLlamada().widgetUnknown).toBe(true);
+  });
+
+  it("Resuelto, se dice cuál", async () => {
+    // Con el widget resuelto va su identificador **y nada más**: la declaración
+    // sobraría, y junto al identificador sería la contradicción que el otro
+    // lado rechaza.
+    await cliente().createChatStream({
+      message: "hola",
+      organizacionId: "org-1",
+      agentId: "a-1",
+      widgetId: "w-1",
+    });
+
+    const cuerpo = cuerpoDeLaLlamada();
+    expect(cuerpo.widgetId).toBe("w-1");
+    expect("widgetUnknown" in cuerpo).toBe(false);
+  });
+
+  it("Quien no declara nada se comporta exactamente como hoy", async () => {
+    // Ni ausente ni `false` mandan el campo. Del otro lado significan lo mismo
+    // —el centinela de «ninguno»— así que mandar un `false` explícito sería un
+    // campo de más en el cable que no distingue nada: superficie que hay que
+    // mantener a cambio de nada.
+    await cliente().createChatStream({
+      message: "hola",
+      organizacionId: "org-1",
+      agentId: "a-1",
+    });
+    const sinDecirNada = cuerpoDeLaLlamada();
+
+    vi.clearAllMocks();
+    request.mockResolvedValue({ statusCode: 200, headers: {}, body: {} });
+
+    await cliente().createChatStream({
+      message: "hola",
+      organizacionId: "org-1",
+      agentId: "a-1",
+      widgetDesconocido: false,
+    });
+    const diciendoQueNo = cuerpoDeLaLlamada();
+
+    expect("widgetUnknown" in sinDecirNada).toBe(false);
+    expect("widgetUnknown" in diciendoQueNo).toBe(false);
+  });
+
+  it("Nunca las dos cosas a la vez", async () => {
+    // El caso patológico: el llamante manda las dos señales. No se propaga la
+    // contradicción —eso sería un 400 y un visitante sin respuesta— y tampoco
+    // se inventa un tercer significado: sale **una sola** señal, y la que sale
+    // es la que sabe algo concreto, el identificador.
+    await cliente().createChatStream({
+      message: "hola",
+      organizacionId: "org-1",
+      agentId: "a-1",
+      widgetId: "w-1",
+      widgetDesconocido: true,
+    });
+
+    const cuerpo = cuerpoDeLaLlamada();
+    expect(cuerpo.widgetId).toBe("w-1");
+    expect("widgetUnknown" in cuerpo).toBe(false);
+  });
+
+  it("Un identificador de sólo espacios no es un identificador, y entonces sí se declara", async () => {
+    // Un identificador en blanco ya no se manda hoy (SPEC-221: sería un 400
+    // nombrando el campo). Si la exclusión mirase el parámetro que llegó en vez
+    // del cuerpo que se arma, este caso saldría **sin ninguna de las dos
+    // señales**: ni widget ni declaración, o sea, «no vino de ningún widget»
+    // otra vez. Por eso la exclusión se decide sobre lo que de verdad se manda.
+    await cliente().createChatStream({
+      message: "hola",
+      uniqueToken: "token-de-organizacion",
+      agentId: "a-1",
+      widgetId: "   ",
+      widgetDesconocido: true,
+    });
+
+    const cuerpo = cuerpoDeLaLlamada();
+    expect("widgetId" in cuerpo).toBe(false);
+    expect(cuerpo.widgetUnknown).toBe(true);
+  });
+});

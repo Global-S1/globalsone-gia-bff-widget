@@ -187,3 +187,64 @@ describe("LeadsServiceClient · resolver la llave de un fichero", () => {
     expect(r.statusCode).toBe(404);
   });
 });
+
+/**
+ * SPEC-221 — por el camino de leads también se dice de qué widget viene.
+ *
+ * **La conversación de ms-agents no la abre este BFF por aquí**: la abre
+ * ms-leads, que es el dueño de la conversación (ADR-034) y quien llama a
+ * `/v1/chat/respuesta-estructurada`. Lo que a este borde le toca es no tirar el
+ * dato: mandarlo. Que llegue hasta la columna depende de que ms-leads lo
+ * reenvíe, y hoy no lo hace — está anotado en el PR.
+ */
+describe("LeadsServiceClient · de qué widget viene (SPEC-221)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    request.mockResolvedValue({
+      statusCode: 200,
+      headers: { "content-type": "application/json" },
+      body: { text: async () => JSON.stringify({ conversacionId: "c-1", texto: "hola" }) },
+    });
+  });
+
+  function cliente() {
+    return new LeadsServiceClient({
+      name: "ms-leads",
+      baseUrl: "http://ms-leads",
+      timeout: 5000,
+      retries: 2,
+      healthPath: "/health",
+    });
+  }
+
+  function cuerpoDeLaLlamada(): Record<string, unknown> {
+    const [, opciones] = request.mock.calls[0] as [string, Record<string, any>];
+    return JSON.parse(opciones.body as string) as Record<string, unknown>;
+  }
+
+  it("manda el widget en el cuerpo, junto al agente y al visitante", async () => {
+    await cliente().atenderMensajeDelWidget(
+      {
+        organizacionId: "org-1",
+        agenteId: "a-1",
+        visitanteId: "v-1",
+        texto: "hola",
+        widgetId: "w-1",
+      },
+      contexto,
+    );
+
+    const cuerpo = cuerpoDeLaLlamada();
+    expect(cuerpo.widgetId).toBe("w-1");
+    expect(cuerpo.visitanteId).toBe("v-1");
+  });
+
+  it("lo que no se sabe no se manda", async () => {
+    await cliente().atenderMensajeDelWidget(
+      { organizacionId: "org-1", agenteId: "a-1", visitanteId: "v-1", texto: "hola" },
+      contexto,
+    );
+
+    expect("widgetId" in cuerpoDeLaLlamada()).toBe(false);
+  });
+});

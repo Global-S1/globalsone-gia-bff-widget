@@ -44,6 +44,23 @@ import {
  * nadie — ni al modelo ni a la cuota. La decisión se toma **aquí dentro** y el
  * CORS se queda abierto a propósito.
  *
+ * **Desde SPEC-221 el mensaje dice de quién es** (SPEC-220): al hablar con el
+ * servicio del agente van, además, el widget ya resuelto y el identificador de
+ * visitante. Los dos son datos que sólo este borde tiene delante y que hasta
+ * hoy se tiraban aquí, y **por los dos caminos por igual** — el del agente y el
+ * de leads—: si sólo atribuyera uno, encender la clasificación de leads
+ * volvería un widget menos auditable que uno sin ella. Nada de esto cambia lo
+ * que ve quien conversa.
+ *
+ * **Desde SPEC-227 también dice cuándo NO lo sabe** (SPEC-226): si resolver
+ * tropieza, o si el fragmento es tan viejo que sólo trae el token de
+ * organización, se declara que vino de un widget desconocido en vez de callar.
+ * Callar aquí no es neutral —ms-agents guarda entonces su centinela de «no vino
+ * de ningún widget»—, y este borde es el único que tiene las dos mitades de la
+ * frase: sabe que entró por su puerta y sabe que no ha podido resolver cuál.
+ * **Las dos señales nunca salen juntas**: el otro lado lo rechaza con un 400, y
+ * un 400 aquí deja mudo un widget que está perfectamente bien.
+ *
  * Entrada (widget):
  *   headers: `unique-tenant-token` (sólo compatibilidad), `ip-address`,
  *            `Origin` (lo pone el navegador; se apunta su dominio, RF-025)
@@ -183,6 +200,37 @@ export async function createChat(req: Request, res: Response): Promise<void> {
   // cuanto sabemos quién es el widget (SPEC-203).
   let organizacionDelWidget: string | undefined;
 
+  // **El widget al que atribuir la conversación** (SPEC-221 · SPEC-220).
+  //
+  // Sale de la resolución y **nunca del cuerpo**: `identificador` puede ser el
+  // del agente —el fragmento antiguo—, y guardar ése metería un identificador
+  // de agente en la columna del widget, dejando vacía para siempre la auditoría
+  // del widget que de verdad atendió.
+  //
+  // Se queda sin valor cuando no se ha podido resolver, que es lo que pide el
+  // SPEC: sin resolución no se dice ningún widget y se atiende como hasta ahora.
+  let widgetAlQueAtribuir: string | undefined;
+
+  // **Y que vino de un widget aunque no sepamos cuál** (SPEC-227 · SPEC-226).
+  //
+  // Este borde sirve a una superficie y a una sola (ADR-001), así que **toda
+  // petición que entra aquí entró por la puerta del widget**, se resuelva o no.
+  // Lo único que puede faltar es cuál — y las dos mitades de esa frase no las
+  // tiene nadie más: ms-agents recibe un cuerpo sin `widgetId` y no puede
+  // distinguir «no vino de ninguno» de «no se supo cuál».
+  //
+  // **Empieza declarado y sólo se apaga al resolver.** No decir nada no deja la
+  // conversación sin widget: la deja con el centinela «ninguno» que ms-agents
+  // escribe cuando no se le dice nada (SPEC-220), es decir, **afirmando algo
+  // falso** que la borra de la auditoría del widget que sí la atendió y la
+  // cuenta como si viniera de otro sitio.
+  //
+  // Empezando así, el fragmento antiguo que sólo trae el token de organización
+  // queda cubierto sin una rama propia: no hay identificador que resolver, no
+  // se le pregunta a nadie, y esto nunca se apaga. Que es exactamente lo que
+  // hay que decir de él.
+  let widgetDesconocido = true;
+
   if (identificador) {
     const resolucion = await resolverWidget(identificador, context);
 
@@ -198,6 +246,14 @@ export async function createChat(req: Request, res: Response): Promise<void> {
       const configuracion = resolucion.config;
       agenteDelWidget = configuracion.agentId;
       organizacionDelWidget = configuracion.organizationId;
+      widgetAlQueAtribuir = configuracion.widgetId;
+      // **Sabemos cuál, así que se dice cuál y no se declara nada** (SPEC-227).
+      //
+      // Se apaga aquí, pegado a la línea que enciende la otra señal, y no en
+      // otro sitio: son las dos mitades de una misma decisión, y separarlas es
+      // lo que dejaría que un día salieran las dos a la vez — que del otro lado
+      // es un 400, o sea, un widget sano que se queda mudo.
+      widgetDesconocido = false;
 
       // **Desde dónde se está cargando** (RF-025 · ADR-038). Va aquí, en cuanto
       // se sabe de qué widget es, y **antes de mirar si está activo**: lo que
@@ -257,6 +313,11 @@ export async function createChat(req: Request, res: Response): Promise<void> {
             visitanteId,
             texto: message,
             ...(ipAddress ? { ip: ipAddress } : {}),
+            // **Los dos caminos atribuyen igual** (SPEC-221). Si sólo lo
+            // hiciera el del agente, encender la clasificación de leads
+            // volvería un widget MENOS auditable que uno sin ella, que es lo
+            // contrario de lo que se busca.
+            widgetId: configuracion.widgetId,
           });
           return;
         }
@@ -283,12 +344,25 @@ export async function createChat(req: Request, res: Response): Promise<void> {
     agentId: agenteDelWidget,
     chatPerUserId: chatSessionId,
     ipAddress,
+    // **De quién es este mensaje** (SPEC-221). Los dos se pasan cuando se
+    // tienen y **no se inventan cuando no**: un identificador por defecto
+    // convertiría a todos los visitantes desconocidos en el mismo, que es justo
+    // el defecto que esto viene a corregir.
+    ...(widgetAlQueAtribuir ? { widgetId: widgetAlQueAtribuir } : {}),
+    // **Y cuando no se ha podido resolver, que vino de uno igual** (SPEC-227).
+    // Es la única forma de que esta conversación no se grabe afirmando que no
+    // vino de ningún widget.
+    ...(widgetDesconocido ? { widgetDesconocido: true } : {}),
+    ...(visitanteId ? { visitanteId } : {}),
   });
 }
 
 /**
- * El camino de hoy: ms-agents, servido según se escribe. **No cambia.** Hay
- * escenarios de SPEC-167 que lo exigen tal cual.
+ * El camino de hoy: ms-agents, servido según se escribe. **No cambia lo que
+ * lee quien conversa**, y hay escenarios de SPEC-167 que lo exigen tal cual.
+ *
+ * Desde SPEC-221 lleva dos datos más sobre la conversación —el widget y el
+ * visitante—, que ms-agents guarda al nacer y no devuelve a nadie por aquí.
  */
 async function atenderPorAgents(
   res: Response,
@@ -299,6 +373,15 @@ async function atenderPorAgents(
     agentId?: string;
     chatPerUserId?: string;
     ipAddress?: string;
+    /** SPEC-221 — el widget resuelto, o nada si no se ha podido resolver. */
+    widgetId?: string;
+    /**
+     * SPEC-227 — que vino de un widget del que no sabemos cuál. Va sin el
+     * anterior y nunca con él.
+     */
+    widgetDesconocido?: boolean;
+    /** SPEC-221 — quién escribe, o nada si el widget no lo mandó. */
+    visitanteId?: string;
   }
 ): Promise<void> {
   try {
@@ -364,6 +447,8 @@ async function atenderPorLeads(
     visitanteId: string;
     texto: string;
     ip?: string;
+    /** SPEC-221 — el widget resuelto, para que este camino atribuya igual. */
+    widgetId?: string;
   }
 ): Promise<void> {
   let respuesta: IServiceResponse<IRespuestaDeLeads>;
