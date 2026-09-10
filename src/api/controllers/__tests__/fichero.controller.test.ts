@@ -26,10 +26,15 @@ import type { Request } from "express";
  */
 
 const resolverLlaveDeFichero = vi.fn();
+const resolverFichero = vi.fn();
 const obtenerFichero = vi.fn();
 
 vi.mock("../../../bff/infrastructure/service-clients/leads-service.client", () => ({
   getLeadsServiceClient: () => ({ resolverLlaveDeFichero }),
+}));
+
+vi.mock("../../../bff/infrastructure/service-clients/agents-service.client", () => ({
+  getAgentsServiceClient: () => ({ resolverFichero }),
 }));
 
 vi.mock("../../../bff/infrastructure/service-clients/documents-service.client", () => ({
@@ -319,3 +324,82 @@ describe("SPEC-187 · descargar un fichero del agente", () => {
     expect(res.cabeceras["Content-Disposition"]).toMatch(/^attachment;/);
   });
 });
+
+describe("SPEC-253 · descarga autorizada por la sesión de la conversación", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("con sesión, pide a ms-agents y entrega los bytes", async () => {
+    resolverFichero.mockResolvedValue({
+      success: true,
+      statusCode: 200,
+      data: {
+        documentServiceId: "doc-123",
+        organizacionId: "org-1",
+        titulo: "Catálogo",
+      },
+    });
+    obtenerFichero.mockResolvedValue({
+      statusCode: 200,
+      headers: {
+        "content-type": "application/pdf",
+        "content-disposition": 'attachment; filename="catalogo.pdf"',
+      },
+      body: Readable.from(["bytes-del-fichero"]),
+    });
+
+    const res = respuestaFalsa();
+    await descargarFichero(
+      peticion("fichero-1", { "chat-session-id": "sesion-1" }),
+      comoRespuesta(res)
+    );
+
+    expect(resolverFichero).toHaveBeenCalledWith(
+      "sesion-1",
+      "fichero-1",
+      expect.anything()
+    );
+    expect(obtenerFichero).toHaveBeenCalledWith(
+      { organizacionId: "org-1", documentoId: "doc-123" },
+      expect.anything()
+    );
+    expect(res.codigo).toBe(200);
+    expect(res.cabeceras["Content-Type"]).toBe("application/pdf");
+    expect(res.cabeceras["Content-Disposition"]).toBe('attachment; filename="catalogo.pdf"');
+  });
+
+  it("con sesión ajena o fichero no perteneciente, ms-agents da 403 y se responde 403", async () => {
+    resolverFichero.mockResolvedValue({
+      success: false,
+      statusCode: 403,
+      error: { message: "No tienes acceso a ese fichero" },
+    });
+
+    const res = respuestaFalsa();
+    await descargarFichero(
+      peticion("fichero-1", { "chat-session-id": "sesion-ajena" }),
+      comoRespuesta(res)
+    );
+
+    expect(res.codigo).toBe(403);
+    await expect(res.cuerpo()).resolves.toBe("Ese fichero ya no está disponible.");
+    expect(obtenerFichero).not.toHaveBeenCalled();
+  });
+
+  it("un error en ms-agents sale como 502", async () => {
+    resolverFichero.mockRejectedValue(new Error("ms-agents caído"));
+
+    const res = respuestaFalsa();
+    await descargarFichero(
+      peticion("fichero-1", { "chat-session-id": "sesion-1" }),
+      comoRespuesta(res)
+    );
+
+    expect(res.codigo).toBe(502);
+    await expect(res.cuerpo()).resolves.toBe(
+      "No he podido darte ese fichero ahora mismo. Vuelve a intentarlo en un momento."
+    );
+  });
+});
+

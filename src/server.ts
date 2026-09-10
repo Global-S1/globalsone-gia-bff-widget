@@ -29,6 +29,8 @@ export function server(): Express {
         "X-Request-ID",
         "unique-tenant-token",
         "ip-address",
+        "Chat-Session-Id",
+        "chat-session-id",
       ],
       // Sin esto, el navegador NO deja al widget leerlas: una cabecera de
       // respuesta que no se expone existe y es invisible desde el script.
