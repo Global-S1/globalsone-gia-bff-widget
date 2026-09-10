@@ -225,10 +225,12 @@ async function entregarBytesDeDocument(
     return;
   }
 
-  res.setHeader("Content-Type", tipoQueSePuedeServir(upstream.headers["content-type"]));
+  const tipo = tipoQueSePuedeServir(upstream.headers["content-type"]);
+  const disposicion = tipo.startsWith("image/") ? "inline" : "attachment";
+  res.setHeader("Content-Type", tipo);
   res.setHeader(
     "Content-Disposition",
-    `attachment; filename="${nombreQueSePuedeServir(upstream.headers["content-disposition"])}"`
+    `${disposicion}; filename="${nombreQueSePuedeServir(upstream.headers["content-disposition"])}"`
   );
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Cache-Control", "private, no-store");
