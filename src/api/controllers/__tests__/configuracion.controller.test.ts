@@ -22,7 +22,10 @@ vi.mock("../../../bff/application/use-cases/widget-config.use-case", () => ({
   resolverWidget: (...args: unknown[]) => resolverWidget(...args),
 }));
 
-const { configuracionDelWidget } = await import("../configuracion.controller");
+// Import estático y no `await import`: el build de este repositorio compila
+// también las pruebas, y su `module` no admite `await` de nivel superior. El
+// doble de arriba lo iza vitest, así que no hace falta.
+import { configuracionDelWidget } from "../configuracion.controller";
 
 function peticion(widgetId = "w-1"): Request {
   return { params: { widgetId }, headers: {} } as unknown as Request;
