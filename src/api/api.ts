@@ -3,6 +3,7 @@ import { StatusCodes } from "../entities/shared/infraestructure/lib/http-status-
 import { env } from "../entities/shared/infraestructure/config/environments";
 import { getServicesHealth } from "../bff/infrastructure/config/backend-services.config";
 import { chatRoutes } from "./routes/chat.routes";
+import { configuracionRoutes } from "./routes/configuracion.routes";
 import { ficheroRoutes } from "./routes/fichero.routes";
 
 export function api(): Router {
@@ -105,6 +106,11 @@ export function api(): Router {
   // Publica y SIN credencial: quien escribe por el widget es anonimo y lo que
   // autoriza es la llave. La ruta de ms-documents sigue cerrada a internet.
   router.use("/fichero", ficheroRoutes());
+
+  // SPEC-259 · RF-034 — lo que un widget necesita saber de si mismo antes del
+  // primer mensaje. Publica y sin credencial, como la de arriba: la pide el
+  // navegador de un visitante anonimo en la web de un tercero.
+  router.use("/widget", configuracionRoutes());
 
   return router;
 }

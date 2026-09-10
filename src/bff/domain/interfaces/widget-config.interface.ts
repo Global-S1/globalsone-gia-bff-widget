@@ -44,4 +44,14 @@ export interface IWidgetConfig {
   readonly allowedDomains: readonly string[];
   /** Si esos dominios se hacen cumplir. Nace apagado (RF-025). */
   readonly domainBlockingEnabled: boolean;
+  /**
+   * SPEC-259 · SPEC-256 · RF-034 — cuántos caracteres deja escribir este
+   * widget, **ya resuelto** por ms-agents: el suyo si lo declaró, y si no el de
+   * la casa.
+   *
+   * Opcional a propósito: un ms-agents que todavía no lo publique deja el campo
+   * ausente, y ausente significa «rige el que el widget ya trae». Este servicio
+   * **no conoce el defecto de la casa y no debe conocerlo**.
+   */
+  readonly topeDeCaracteres?: number;
 }
