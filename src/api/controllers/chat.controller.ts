@@ -12,6 +12,7 @@ import { dominioDelOrigen } from "../../bff/domain/dominio-del-origen";
 import { IRequestContext } from "../../bff/domain/interfaces/request-context.interface";
 import { IServiceResponse } from "../../bff/domain/interfaces/service-response.interface";
 import { logger } from "../../entities/shared/infraestructure/utils/logger";
+import { ficherosDeLaCabecera, fotosDeLaCabecera } from "./lo-que-vuelve-de-agents";
 import {
   CABECERA_DE_FOTOS,
   codificarFotos,
@@ -404,6 +405,23 @@ async function atenderPorAgents(
       (Array.isArray(contentType) ? contentType[0] : contentType) ||
         "text/plain; charset=utf-8"
     );
+    /*
+     * SPEC-253 · RF-033 — lo que el agente apartó, también por el camino corto.
+     *
+     * ms-agents lo devuelve en dos cabeceras propias y aquí se traducen a las
+     * dos que el widget ya sabe leer, con sus mismas reservas de presupuesto.
+     * **Una sola forma venga por donde venga**: quien escribe no puede notar por
+     * qué camino entró su mensaje.
+     */
+    const ficheros = ficherosDeLaCabecera(upstream.headers["chat-resources"]);
+    if (ficheros) {
+      res.setHeader(CABECERA_DE_FICHEROS, ficheros);
+    }
+    const fotosDelAgente = fotosDeLaCabecera(upstream.headers["chat-photos"]);
+    if (fotosDelAgente) {
+      res.setHeader(CABECERA_DE_FOTOS, fotosDelAgente);
+    }
+
     res.setHeader("Cache-Control", "no-cache, no-transform");
     res.setHeader("X-Accel-Buffering", "no");
     res.status(upstream.statusCode);

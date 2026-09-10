@@ -110,12 +110,16 @@ function comoRespuesta(res: RespuestaFalsa): Response {
 }
 
 /** Lo que ms-agents devuelve hoy: cabeceras + un cuerpo que se sirve según llega. */
-function respuestaDeAgents(texto = "respuesta del agente") {
+function respuestaDeAgents(
+  texto = "respuesta del agente",
+  cabeceras: Record<string, string> = {}
+) {
   return {
     statusCode: 200,
     headers: {
       "content-type": "text/plain; charset=utf-8",
       "chat-session-id": "sesion-1",
+      ...cabeceras,
     },
     body: Readable.from([texto]),
   };
@@ -866,6 +870,40 @@ describe("SPEC-188 · los ficheros hacia el navegador", () => {
     expect(res.cabeceras["Chat-Files"]).toBeUndefined();
     expect(res.cabeceras["Chat-Photos"]).toBeUndefined();
     await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+  });
+
+  it("SPEC-253 · Por el camino corto también vuelven ficheros y fotos", async () => {
+    getWidgetConfig.mockResolvedValue(configuracion(false));
+    const ficherosCrudos = Buffer.from(
+      JSON.stringify([{ id: "f-123", titulo: "Catálogo de productos" }])
+    ).toString("base64");
+    const fotosCrudas = Buffer.from(
+      JSON.stringify(["https://cdn.example.com/foto.jpg"])
+    ).toString("base64");
+
+    createChatStream.mockResolvedValue(
+      respuestaDeAgents("texto del agente", {
+        "chat-resources": ficherosCrudos,
+        "chat-photos": fotosCrudas,
+      })
+    );
+    const res = respuesta();
+
+    await createChat(peticion({ agentId: AGENTE, visitanteId: VISITANTE }), comoRespuesta(res));
+
+    expect(createChatStream).toHaveBeenCalledTimes(1);
+    expect(res.cabeceras["Chat-Files"]).toBeDefined();
+    expect(res.cabeceras["Chat-Photos"]).toBeDefined();
+
+    const ficheros = JSON.parse(
+      Buffer.from(res.cabeceras["Chat-Files"]!, "base64").toString("utf8")
+    );
+    expect(ficheros).toEqual([{ titulo: "Catálogo de productos", id: "f-123" }]);
+
+    const fotos = JSON.parse(
+      Buffer.from(res.cabeceras["Chat-Photos"]!, "base64").toString("utf8")
+    );
+    expect(fotos).toEqual(["https://cdn.example.com/foto.jpg"]);
   });
 });
 

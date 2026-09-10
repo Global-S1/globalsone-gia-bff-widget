@@ -10,9 +10,9 @@
     "agent": "implementador-node"
   },
   "commands": {
-    "test": "npm test",
-    "test_one": "npm test -- {archivo}",
-    "lint": "npm run lint"
+    "setup": "pnpm install --frozen-lockfile",
+    "test": "pnpm run test:coverage",
+    "test_one": "pnpm test {archivo}"
   },
   "implements": {
     "component": "CA-011"
