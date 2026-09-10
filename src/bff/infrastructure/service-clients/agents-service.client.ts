@@ -351,6 +351,7 @@ export class AgentsServiceClient extends BaseServiceClient {
         timeout: 3000,
         headers: {
           "x-internal-service-token": env.internalServiceToken ?? "",
+          "x-channel": "widget",
         },
       },
       { correlationId: context.correlationId, timestamp: context.timestamp }
