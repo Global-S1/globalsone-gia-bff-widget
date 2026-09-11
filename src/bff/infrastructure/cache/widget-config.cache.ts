@@ -22,9 +22,14 @@
  * —esa es la regla del SPEC— y cachearlo dejaría a un agente fuera de leads
  * durante todo el TTL por un tropiezo de un segundo.
  *
- * El coste, declarado: un tenant que cambia el interruptor tarda hasta un TTL
- * en notarlo, y dos réplicas pueden discrepar mientras tanto. Es el mismo coste
- * que tendría cualquier caché por tiempo, también una compartida.
+ * **El vencimiento ya no es la única forma de estar al día** (ADR-044). Desde
+ * SPEC-262 esto se olvida también por aviso: ms-agents publica cuando un widget
+ * cambia y aquí se borra al instante. Lo que el tenant guarda rige desde la
+ * petición siguiente, no desde dentro de un rato.
+ *
+ * El TTL se queda debajo, como red: si Redis no está, si el aviso se pierde o
+ * si el proceso acababa de arrancar, el peor caso vuelve a ser el de antes
+ * —hasta un TTL de retraso— y no uno peor.
  */
 import { env } from "../../../entities/shared/infraestructure/config/environments";
 import { IWidgetConfig } from "../../domain/interfaces/widget-config.interface";
@@ -61,7 +66,24 @@ export function guardarConfiguracionDeWidget(
   });
 }
 
-/** Vacía la memoria. Existe para las pruebas: en marcha nadie la invalida. */
+/**
+ * SPEC-262 · SPEC-261 · ADR-044 — olvida lo que se guardaba de un widget.
+ *
+ * **Se borra por widget, no por clave.** Esto se indexa por «el identificador
+ * tal como llegó» —el del widget o el de su agente (ADR-037)—, así que el mismo
+ * widget puede estar bajo dos claves y el aviso sólo trae una. Se recorre el
+ * mapa buscando al dueño: son unos pocos objetos, y la alternativa —que
+ * ms-agents mandara también el identificador del agente— le obligaría a saber
+ * cómo indexa su memoria un servicio que no es suyo.
+ */
+export function olvidarWidget(widgetId: string): void {
+  entradas.delete(widgetId);
+  for (const [clave, entrada] of entradas) {
+    if (entrada.valor.widgetId === widgetId) entradas.delete(clave);
+  }
+}
+
+/** Vacía la memoria entera. Existe para las pruebas. */
 export function limpiarCacheDeConfiguracionDeWidget(): void {
   entradas.clear();
 }
