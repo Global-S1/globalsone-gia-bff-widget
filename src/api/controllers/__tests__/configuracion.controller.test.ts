@@ -138,4 +138,25 @@ describe("SPEC-259 · Un widget pregunta por lo suyo", () => {
 
     expect(Object.keys(capturado.cuerpo as object)).toEqual(["topeDeCaracteres"]);
   });
+
+  /*
+   * SPEC-262 · ADR-044 — **se pregunta siempre.** Esta ruta se pide una vez
+   * por carga de página, no una por mensaje: no tiene por qué pagar la espera
+   * que la caché del camino caliente impone, ni servirle al tenant lo que él
+   * mismo acaba de cambiar.
+   */
+  it("resuelve sin pasar por la caché", async () => {
+    resolverWidget.mockResolvedValue({
+      tipo: "resuelto",
+      config: { topeDeCaracteres: 500 },
+    });
+
+    await configuracionDelWidget(peticion("w-1"), respuesta().res);
+
+    expect(resolverWidget).toHaveBeenCalledWith(
+      "w-1",
+      expect.anything(),
+      { sinCache: true }
+    );
+  });
 });

@@ -38,7 +38,16 @@ export async function configuracionDelWidget(req: Request, res: Response): Promi
     timestamp: new Date(),
   };
 
-  const resolucion = await resolverWidget(String(req.params?.["widgetId"] ?? ""), context);
+  /*
+   * SPEC-262 · ADR-044 — **sin caché, a propósito.** La memoria de SPEC-167
+   * existe por el camino de mensajes, que pregunta una vez por cada mensaje de
+   * cada visitante. Esto se pide una vez por carga de página, y heredar aquella
+   * espera significaba servirle al tenant, durante minutos, el tope que él
+   * mismo acababa de cambiar.
+   */
+  const resolucion = await resolverWidget(String(req.params?.["widgetId"] ?? ""), context, {
+    sinCache: true,
+  });
 
   /*
    * **Cuando no se sabe, el campo no viaja**: ni un error ni un número
