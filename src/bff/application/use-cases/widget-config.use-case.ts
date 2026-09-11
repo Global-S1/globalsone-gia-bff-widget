@@ -35,6 +35,21 @@ export type ResolucionDeWidget =
   | { readonly tipo: "no-se-sabe" };
 
 /**
+ * SPEC-262 · ADR-044 — cómo se pide.
+ *
+ * `sinCache` es para la ruta de configuración (SPEC-259): se consulta una vez
+ * por carga de página, no una por mensaje, y no tiene por qué pagar la espera
+ * que la caché de SPEC-167 impone al camino caliente.
+ *
+ * **Corta las dos direcciones, y las dos importan**: no lee, para no servir lo
+ * que el tenant acaba de cambiar; y no siembra, para que una visita que sólo
+ * carga la página no le deje al camino de mensajes una copia que nadie encargó.
+ */
+export interface IOpcionesDeResolucion {
+  readonly sinCache?: boolean;
+}
+
+/**
  * El identificador es **el del widget o el del agente**, indistintamente: la
  * ruta de ms-agents resuelve los dos y devuelve el widget por defecto cuando le
  * dan un agente (ADR-037). Aquí no se decide cuál es cuál — decidirlo obligaría
@@ -43,9 +58,10 @@ export type ResolucionDeWidget =
  */
 export async function resolverWidget(
   identificador: string,
-  context: IRequestContext
+  context: IRequestContext,
+  opciones: IOpcionesDeResolucion = {}
 ): Promise<ResolucionDeWidget> {
-  const cacheada = leerConfiguracionDeWidget(identificador);
+  const cacheada = opciones.sinCache ? null : leerConfiguracionDeWidget(identificador);
   if (cacheada) return { tipo: "resuelto", config: cacheada };
 
   try {
@@ -75,7 +91,7 @@ export async function resolverWidget(
     // **Sólo se guardan los aciertos.** Cachear un fallo dejaría al widget
     // fuera durante todo el TTL por un tropiezo de un segundo; y cachear un
     // «no existe» dejaría muerto durante todo el TTL un widget recién creado.
-    guardarConfiguracionDeWidget(identificador, respuesta.data);
+    if (!opciones.sinCache) guardarConfiguracionDeWidget(identificador, respuesta.data);
     return { tipo: "resuelto", config: respuesta.data };
   } catch (error) {
     logger.warn("Falló la consulta de la configuración de widget", {

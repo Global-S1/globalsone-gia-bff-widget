@@ -434,3 +434,60 @@ describe("AgentsServiceClient · declarar el widget desconocido (SPEC-227)", () 
     expect(cuerpo.widgetUnknown).toBe(true);
   });
 });
+
+describe("SPEC-253 · el canal declara que entrega adjuntos y resuelve ficheros", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function cuerpoDeLaLlamada(): Record<string, unknown> {
+    const [, opciones] = request.mock.calls[0] as [string, Record<string, any>];
+    return JSON.parse(opciones.body as string) as Record<string, unknown>;
+  }
+
+  it("createChatStream declara siempre que sabe entregar adjuntos", async () => {
+    request.mockResolvedValue({
+      statusCode: 200,
+      headers: {},
+      body: { on: vi.fn(), pipe: vi.fn() },
+    });
+
+    await cliente().createChatStream({
+      message: "hola",
+      agentId: "a-1",
+      uniqueToken: "tok-1",
+    });
+
+    const cuerpo = cuerpoDeLaLlamada();
+    expect(cuerpo.entregaRecursos).toBe(true);
+  });
+
+  it("resolverFichero pregunta a ms-agents por el fichero y la sesión de la conversación", async () => {
+    request.mockResolvedValue(
+      respuestaJson(200, {
+        success: true,
+        data: {
+          documentServiceId: "doc-123",
+          organizacionId: "org-456",
+          titulo: "Catálogo 2026",
+        },
+      })
+    );
+
+    const respuesta = await cliente().resolverFichero("sesion-1", "fichero-1", contexto);
+
+    expect(respuesta.success).toBe(true);
+    expect(respuesta.data).toEqual({
+      documentServiceId: "doc-123",
+      organizacionId: "org-456",
+      titulo: "Catálogo 2026",
+    });
+    expect(request).toHaveBeenCalledWith(
+      "http://ms-agents/v1/chat/fichero/fichero-1?chatPerUserId=sesion-1",
+      expect.objectContaining({
+        method: "GET",
+      })
+    );
+  });
+});
+

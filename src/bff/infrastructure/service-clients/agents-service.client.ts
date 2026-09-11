@@ -7,6 +7,12 @@ import { env } from "../../../entities/shared/infraestructure/config/environment
 import { IWidgetConfig } from "../../domain/interfaces/widget-config.interface";
 import type { Dispatcher } from "undici";
 
+export interface IFicheroResueltoAgents {
+  documentServiceId: string;
+  organizacionId: string;
+  titulo: string;
+}
+
 export interface ICreateChatParams {
   message: string;
   /**
@@ -242,7 +248,21 @@ export class AgentsServiceClient extends BaseServiceClient {
 
     // Primer turno: se ata el agente entrenado. Turnos siguientes: se encadena
     // la sesión existente (el agentId ya quedó ligado a la sesión en ms-agents).
-    const payload: Record<string, unknown> = { message: params.message };
+    /*
+     * SPEC-253 · RF-033 · ADR-043 — **este canal sabe entregar adjuntos, y lo
+     * dice.**
+     *
+     * No es un permiso: es lo que este servicio sabe hacer, y lo sabe desde
+     * SPEC-183 y SPEC-188 —tiene las cabeceras y tiene el proxy—. Sin
+     * declararlo, ms-agents no le ofrecía al agente la herramienta de recursos,
+     * no leía sus recursos —y con ello las referencias de sus instrucciones se
+     * caían— y los momentos de acompañamiento no se disparaban. Nada de eso lo
+     * pidió nadie: era el efecto lateral de un atajo (IDEA-045).
+     */
+    const payload: Record<string, unknown> = {
+      message: params.message,
+      entregaRecursos: true,
+    };
     if (params.chatPerUserId) {
       payload.chatPerUserId = params.chatPerUserId;
     } else if (params.agentId) {
@@ -311,6 +331,31 @@ export class AgentsServiceClient extends BaseServiceClient {
       headersTimeout: 30000,
       bodyTimeout: 120000,
     });
+  }
+
+  /**
+   * SPEC-251 · SPEC-253 · RF-032 · ADR-043 — pregunta a ms-agents si un fichero
+   * pertenece a la conversación dada y resuelve su documento y organización.
+   */
+  async resolverFichero(
+    chatPerUserId: string,
+    ficheroId: string,
+    context: IRequestContext
+  ): Promise<IServiceResponse<IFicheroResueltoAgents>> {
+    return this.request<IFicheroResueltoAgents>(
+      {
+        method: "GET",
+        path: `/v1/chat/fichero/${encodeURIComponent(ficheroId)}`,
+        query: { chatPerUserId },
+        retries: 1,
+        timeout: 3000,
+        headers: {
+          "x-internal-service-token": env.internalServiceToken ?? "",
+          "x-channel": "widget",
+        },
+      },
+      { correlationId: context.correlationId, timestamp: context.timestamp }
+    );
   }
 }
 

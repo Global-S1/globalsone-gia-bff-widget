@@ -11,8 +11,8 @@ import { descargarFichero } from "../controllers/fichero.controller";
 export function ficheroRoutes(): Router {
   const router = Router();
 
-  // GET /v1/fichero/:llave — públicamente `/v1/widget/v1/fichero/:llave`.
-  router.get("/:llave", descargarFichero);
+  // GET /v1/fichero/:id — públicamente `/v1/widget/v1/fichero/:id`.
+  router.get("/:id", descargarFichero);
 
   return router;
 }

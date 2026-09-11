@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { StatusCodes } from "../../entities/shared/infraestructure/lib/http-status-codes";
 import { getLeadsServiceClient } from "../../bff/infrastructure/service-clients/leads-service.client";
+import { getAgentsServiceClient } from "../../bff/infrastructure/service-clients/agents-service.client";
 import { getDocumentsServiceClient } from "../../bff/infrastructure/service-clients/documents-service.client";
 import { IRequestContext } from "../../bff/domain/interfaces/request-context.interface";
 import { logger } from "../../entities/shared/infraestructure/utils/logger";
@@ -96,22 +97,70 @@ export async function descargarFichero(
   req: Request,
   res: Response
 ): Promise<void> {
-  const llave = String(req.params?.["llave"] ?? "");
+  const identificador = String(req.params?.["id"] ?? req.params?.["llave"] ?? "");
 
   const context: IRequestContext = {
     correlationId: (req.headers["x-correlation-id"] as string) || "",
     timestamp: new Date(),
   };
 
-  if (!FORMA_DE_LA_LLAVE.test(llave)) {
+  const chatSessionId =
+    (req.headers["chat-session-id"] as string) ||
+    (req.headers["x-chat-session-id"] as string) ||
+    (req.query?.["chatSessionId"] as string) ||
+    (req.query?.["chatPerUserId"] as string) ||
+    "";
+
+  // ── SPEC-253 · RF-032 · ADR-043: La descarga la autoriza la sesión ──────────
+  if (chatSessionId) {
+    let resuelto;
+    try {
+      resuelto = await getAgentsServiceClient().resolverFichero(
+        chatSessionId,
+        identificador,
+        context
+      );
+    } catch (error) {
+      logger.error("No se pudo resolver el fichero con ms-agents", error);
+      noTePuedoAtender(res);
+      return;
+    }
+
+    if (
+      resuelto.statusCode === StatusCodes.FORBIDDEN ||
+      resuelto.statusCode === StatusCodes.NOT_FOUND
+    ) {
+      noAutorizado(res);
+      return;
+    }
+
+    if (!resuelto.success || !resuelto.data) {
+      logger.error("ms-agents no resolvió el fichero", {
+        statusCode: resuelto.statusCode,
+        error: resuelto.error,
+      });
+      noTePuedoAtender(res);
+      return;
+    }
+
+    await entregarBytesDeDocument(
+      res,
+      resuelto.data.organizacionId,
+      resuelto.data.documentServiceId,
+      context
+    );
+    return;
+  }
+
+  // ── Convivencia: enlaces de antes que llevaban llave (ADR-035 · SPEC-187) ──
+  if (!FORMA_DE_LA_LLAVE.test(identificador)) {
     noEsta(res);
     return;
   }
 
-  // ── De quién es la llave ─────────────────────────────────────────────────
   let suya;
   try {
-    suya = await getLeadsServiceClient().resolverLlaveDeFichero(llave, context);
+    suya = await getLeadsServiceClient().resolverLlaveDeFichero(identificador, context);
   } catch (error) {
     logger.error("No se pudo resolver la llave de un fichero del widget", error);
     noTePuedoAtender(res);
@@ -119,8 +168,6 @@ export async function descargarFichero(
   }
 
   if (suya.statusCode === StatusCodes.NOT_FOUND) {
-    // Una llave que no está es un 404 para todo el mundo, y no se llama a
-    // ms-documents: sin llave no hay a qué documento ir.
     noEsta(res);
     return;
   }
@@ -130,19 +177,30 @@ export async function descargarFichero(
       statusCode: suya.statusCode,
       error: suya.error,
     });
-    // **502 y no 404**: decirle «no existe» a un enlace que sí existe le pide a
-    // quien escribe que deje de intentarlo con algo que sólo está caído.
     noTePuedoAtender(res);
     return;
   }
 
-  // ── Los bytes ────────────────────────────────────────────────────────────
+  await entregarBytesDeDocument(
+    res,
+    suya.data.organizacionId,
+    suya.data.documentoId,
+    context
+  );
+}
+
+async function entregarBytesDeDocument(
+  res: Response,
+  organizacionId: string,
+  documentoId: string,
+  context: IRequestContext
+): Promise<void> {
   let upstream;
   try {
     upstream = await getDocumentsServiceClient().obtenerFichero(
       {
-        organizacionId: suya.data.organizacionId,
-        documentoId: suya.data.documentoId,
+        organizacionId,
+        documentoId,
       },
       context
     );
@@ -153,8 +211,6 @@ export async function descargarFichero(
   }
 
   if (upstream.statusCode === StatusCodes.NOT_FOUND) {
-    // Los dos lados se borran por separado: una llave viva contra un documento
-    // que ya no está es un caso normal, no una avería.
     upstream.body.resume();
     noEsta(res);
     return;
@@ -169,25 +225,14 @@ export async function descargarFichero(
     return;
   }
 
-  // ── La descarga ──────────────────────────────────────────────────────────
-  //
-  // **El navegador lo guarda, no lo abre**, y ésa es la diferencia con las
-  // fotos (SPEC-183): aquéllas viven en otro dominio y entre dominios distintos
-  // el navegador ignora esta instrucción y las abre; estos bytes salen de
-  // nosotros, así que aquí la descarga es una descarga de verdad y el botón del
-  // widget cumple lo que promete (RF-022).
-  //
-  // La cabecera se **re-emite** en vez de reenviarse tal cual: lo que llega es
-  // de otro servicio, y este es el borde que da a un navegador ajeno.
-  res.setHeader("Content-Type", tipoQueSePuedeServir(upstream.headers["content-type"]));
+  const tipo = tipoQueSePuedeServir(upstream.headers["content-type"]);
+  const disposicion = tipo.startsWith("image/") ? "inline" : "attachment";
+  res.setHeader("Content-Type", tipo);
   res.setHeader(
     "Content-Disposition",
-    `attachment; filename="${nombreQueSePuedeServir(upstream.headers["content-disposition"])}"`
+    `${disposicion}; filename="${nombreQueSePuedeServir(upstream.headers["content-disposition"])}"`
   );
-  // El contenido lo subió un tenant: que ningún navegador decida por su cuenta
-  // que esto es HTML y lo ejecute en nuestro origen.
   res.setHeader("X-Content-Type-Options", "nosniff");
-  // La URL ES el secreto: no puede quedarse en una caché compartida.
   res.setHeader("Cache-Control", "private, no-store");
   res.status(StatusCodes.OK);
 
@@ -204,6 +249,10 @@ export async function descargarFichero(
 
 function noEsta(res: Response): void {
   enPalabras(res, StatusCodes.NOT_FOUND, NO_ESTA);
+}
+
+function noAutorizado(res: Response): void {
+  enPalabras(res, StatusCodes.FORBIDDEN, NO_ESTA);
 }
 
 function noTePuedoAtender(res: Response): void {

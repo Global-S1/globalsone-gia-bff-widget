@@ -28,27 +28,27 @@ import {
  */
 export const CABECERA_DE_FICHEROS = "Chat-Files";
 
-/** Lo que ms-leads devuelve de cada fichero apartado (SPEC-186). */
-export interface FicheroApartado {
-  readonly titulo: string;
-  readonly llave: string;
-}
+/** Lo que ms-leads o ms-agents devuelve de cada fichero apartado (SPEC-186 · SPEC-252 · SPEC-253). */
+export type FicheroApartado =
+  | { readonly titulo: string; readonly id: string }
+  | { readonly titulo: string; readonly llave: string };
 
 /**
- * La forma de una llave (SPEC-186): 256 bits en `base64url`, 43 caracteres.
+ * SPEC-253 — la forma de una llave de las de antes (SPEC-186): 256 bits en
+ * `base64url`, 43 caracteres.
  *
- * La misma que comprueba el proxy antes de preguntar por ella. Ofrecer una
- * llave con otra forma es ofrecer un enlace que ya sabemos que va a dar 404, y
- * un enlace muerto en la conversación no se distingue de una avería.
+ * Ya no se acuñan, y el proxy las sigue atendiendo porque hay enlaces
+ * repartidos en conversaciones guardadas en navegadores. Se conserva aquí para
+ * poder distinguirlas de un identificador cuando llega una de ellas.
  */
-const FORMA_DE_LA_LLAVE = /^[A-Za-z0-9_-]{43}$/;
+export const FORMA_DE_LA_LLAVE = /^[A-Za-z0-9_-]{43}$/;
 
 /**
  * Un fichero que se le puede ofrecer a quien escribe, o nada.
  *
- * Hacen falta las dos cosas. Sin llave no hay de dónde bajarlo; **sin título no
- * hay bloque que pintar** (SPEC-189) y quedaría un enlace mudo, que es peor que
- * no ofrecerlo.
+ * Hacen falta las dos cosas. Sin identificador/llave no hay de dónde bajarlo;
+ * **sin título no hay bloque que pintar** (SPEC-189) y quedaría un enlace mudo,
+ * que es peor que no ofrecerlo.
  *
  * El título va **entero y tal cual**: es lo que el tenant escribió y lo que va a
  * leer quien conversa. No se recorta ni se transliteran sus acentos — para eso
@@ -56,10 +56,22 @@ const FORMA_DE_LA_LLAVE = /^[A-Za-z0-9_-]{43}$/;
  */
 function ficheroQueSePuedeOfrecer(fichero: unknown): FicheroApartado | null {
   if (typeof fichero !== "object" || fichero === null) return null;
-  const { titulo, llave } = fichero as { titulo?: unknown; llave?: unknown };
+  const { titulo, id, llave } = fichero as {
+    titulo?: unknown;
+    id?: unknown;
+    llave?: unknown;
+  };
   if (typeof titulo !== "string" || titulo.trim() === "") return null;
-  if (typeof llave !== "string" || !FORMA_DE_LA_LLAVE.test(llave)) return null;
-  return { titulo, llave };
+
+  if (typeof id === "string" && id.trim() !== "") {
+    return { titulo: titulo.trim(), id: id.trim() };
+  }
+
+  if (typeof llave === "string" && FORMA_DE_LA_LLAVE.test(llave)) {
+    return { titulo: titulo.trim(), llave: llave.trim() };
+  }
+
+  return null;
 }
 
 /**
