@@ -59,5 +59,25 @@ export async function configuracionDelWidget(req: Request, res: Response): Promi
   const tope =
     resolucion.tipo === "resuelto" ? resolucion.config.topeDeCaracteres : undefined;
 
-  res.status(StatusCodes.OK).json(tope === undefined ? {} : { topeDeCaracteres: tope });
+  /*
+   * Si el widget puede atender ahora mismo.
+   *
+   * **Un solo dato para dos motivos** —el cliente lo apagó, o su organización
+   * no está al día— porque desde delante son lo mismo: el visitante no puede
+   * hacer nada en ninguno de los dos casos y no le corresponde saber cuál es.
+   * Separarlos aquí sería publicar por qué.
+   *
+   * Sólo se dice `false` cuando se sabe: un widget que no se pudo resolver no
+   * se declara indisponible, porque el widget ya tiene su propio camino para
+   * un identificador que no existe.
+   */
+  const disponible =
+    resolucion.tipo === "resuelto"
+      ? resolucion.config.active === true && resolucion.config.organizacionSuspendida !== true
+      : undefined;
+
+  res.status(StatusCodes.OK).json({
+    ...(tope === undefined ? {} : { topeDeCaracteres: tope }),
+    ...(disponible === undefined ? {} : { disponible }),
+  });
 }
