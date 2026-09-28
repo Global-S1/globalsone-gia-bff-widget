@@ -219,8 +219,12 @@ export abstract class BaseServiceClient implements IServiceClient {
 
   /**
    * Build request headers with context propagation
+   *
+   * `protected` y no `private`: un cliente puede añadir la cabecera con la que
+   * SU servicio identifica a la organización (ms-agents usa
+   * `x-organization-token`) sin reescribir el resto.
    */
-  private buildHeaders(
+  protected buildHeaders(
     customHeaders: Record<string, string> | undefined,
     context: IRequestContext
   ): Record<string, string> {
@@ -242,6 +246,13 @@ export abstract class BaseServiceClient implements IServiceClient {
 
     if (context.userRoles && context.userRoles.length > 0) {
       headers["X-User-Roles"] = context.userRoles.join(",");
+    }
+
+    // La organización de la sesión, cuando la hay. El chat nunca la fija —no
+    // tiene sesión— así que para él esta línea no manda nada; el panel
+    // incrustado la necesita en todas sus llamadas (RF-008).
+    if (context.tenantId) {
+      headers["X-Tenant-Id"] = context.tenantId;
     }
 
     // Add custom headers
