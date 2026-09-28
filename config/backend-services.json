@@ -34,6 +34,20 @@
       "timeout": 5000,
       "retries": 2,
       "healthPath": "/health"
+    },
+    "messaging": {
+      "name": "ms-messaging",
+      "baseUrl": "${MS_MESSAGING_URL}",
+      "timeout": 8000,
+      "retries": 2,
+      "healthPath": "/health"
+    },
+    "audit": {
+      "name": "ms-audit",
+      "baseUrl": "${MS_AUDIT_URL}",
+      "timeout": 5000,
+      "retries": 2,
+      "healthPath": "/health"
     }
   }
 }

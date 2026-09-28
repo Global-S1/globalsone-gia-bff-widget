@@ -5,6 +5,7 @@ import { getServicesHealth } from "../bff/infrastructure/config/backend-services
 import { chatRoutes } from "./routes/chat.routes";
 import { configuracionRoutes } from "./routes/configuracion.routes";
 import { ficheroRoutes } from "./routes/fichero.routes";
+import { panelLeadsRoutes } from "../widgets/panel-leads";
 
 export function api(): Router {
   const router = Router();
@@ -111,6 +112,12 @@ export function api(): Router {
   // primer mensaje. Publica y sin credencial, como la de arriba: la pide el
   // navegador de un visitante anonimo en la web de un tercero.
   router.use("/widget", configuracionRoutes());
+
+  // SPEC-268/271 · ADR-046 — el panel incrustado de GIA Leads, como módulo
+  // aparte (`src/widgets/panel-leads`). Este BFF es la puerta común de todo lo
+  // que se incrusta en webs de terceros; cada widget vive en su carpeta y no
+  // toca la de al lado. El gateway llega con el prefijo puesto: /v1/panel/…
+  router.use("/panel", panelLeadsRoutes());
 
   return router;
 }

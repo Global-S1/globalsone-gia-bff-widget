@@ -26,4 +26,14 @@ export interface IRequestContext {
 
   /** User agent string */
   userAgent?: string;
+
+  /**
+   * La organización de la sesión. Sólo la traen las peticiones del panel
+   * incrustado (`src/widgets/panel-leads`), donde la pone el gateway tras el
+   * `auth_request`; el chat no tiene sesión y la deja sin fijar.
+   */
+  tenantId?: string;
+
+  /** Los permisos resueltos por ms-auth en esta petición (sólo el panel). */
+  userPermissions?: string[];
 }
