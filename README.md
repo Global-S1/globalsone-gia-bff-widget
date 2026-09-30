@@ -51,13 +51,11 @@ Esas tres rutas son las únicas sin `auth_request` en el gateway; se reenvían a
 
 | Método y ruta | Permiso | Qué devuelve |
 | :--- | :---: | :--- |
-| `GET /v1/panel/leads/panel` | `leads:read` | `{leads[], solicitudesDeBorrado[]}`, con `degradado[]` si lo pendiente no vino |
-| `GET /v1/panel/leads/pendientes` | `leads:read` | las solicitudes de borrado |
+| `GET /v1/panel/leads/panel` | `leads:read` | `{leads[]}` |
 | `GET /v1/panel/leads/leads/:leadId/historial` | `leads:read` | la ficha, con `contactos[].actorNombre` y `clases[{id,nombre}]` para corregir la suya |
 | `GET /v1/panel/leads/leads/:leadId/clasificaciones` | `leads:read` | el historial de clasificaciones |
 | `PUT /v1/panel/leads/leads/:leadId/clase` `{clase, explicacion?}` | `leads:attend` | la clasificación registrada |
 | `PUT /v1/panel/leads/leads/:leadId/contacto` `{nombre?, correo?, telefono?}` | `leads:attend` | el lead; ausente no toca, texto pone, `null` vacía |
-| `DELETE /v1/panel/leads/leads/:leadId` | `leads:attend` | `204` |
 | `GET /v1/panel/leads/conversaciones?estado=` | `leads:read` | `{conversaciones[]}` con `asignadaANombre` |
 | `GET /v1/panel/leads/conversaciones/:id/ficha` | `leads:read` | hilo + `lead` + `consumo` + `agente`; sólo el hilo es imprescindible |
 | `GET /v1/panel/leads/conversaciones/:id` | `leads:read` | el hilo y su `plazo` |
@@ -67,7 +65,7 @@ Esas tres rutas son las únicas sin `auth_request` en el gateway; se reenvían a
 | `POST /v1/panel/leads/conversaciones/:id/recursos/:recursoId` `{texto}` | `leads:attend` | `201`; un recurso ajeno es `404` |
 | `POST /v1/panel/leads/conversaciones/:id/consultas/:consultaId` | `leads:attend` | lo que devolvió la consulta |
 
-No hay catálogo, canales ni ajustes por esta puerta (SPEC-271). Toda lectura y acción publica un evento en ms-audit por Redis con `service: "bff-widget"`, `payload.superficie: "panel-incrustado"` y `payload.origen` (SPEC-273), con tope de un segundo: registrar nunca tumba el trabajo. Variables propias del módulo: `MS_MESSAGING_URL` (qué agente atiende una cuenta de canal) y `MS_AUDIT_URL` (salud); `MS_DOCUMENTS_URL` (ficheros de los recursos) e `INTERNAL_SERVICE_TOKEN` ya existían. Pendiente: SPEC-272 (bandeja en vivo), no incluido; la bandeja se refresca a mano.
+No hay catálogo, canales, ajustes ni solicitudes de borrado por esta puerta (SPEC-271; las solicitudes de borrado se gestionan en el backoffice de GIA). Toda lectura y acción publica un evento en ms-audit por Redis con `service: "bff-widget"`, `payload.superficie: "panel-incrustado"` y `payload.origen` (SPEC-273), con tope de un segundo: registrar nunca tumba el trabajo. Variables propias del módulo: `MS_MESSAGING_URL` (qué agente atiende una cuenta de canal) y `MS_AUDIT_URL` (salud); `MS_DOCUMENTS_URL` (ficheros de los recursos) e `INTERNAL_SERVICE_TOKEN` ya existían. Pendiente: SPEC-272 (bandeja en vivo), no incluido; la bandeja se refresca a mano.
 
 ## 💬 El chat del widget
 
