@@ -42,32 +42,17 @@ interface Degradado {
 }
 
 export const leadsController = {
-  /** El panel: los leads con su clase vigente y lo pendiente, en una respuesta. */
+  /**
+   * El panel: los leads con su clase vigente. **Sin las solicitudes de
+   * borrado**: se gestionan en el backoffice de GIA, no desde un anfitrión.
+   */
   async panel(req: Request, res: Response): Promise<void> {
-    const ctx = contexto(req);
-    const degradado: Degradado[] = [];
-
-    const [leads, pendientes] = await Promise.all([
-      getLeadsServiceClient().listarLeads(ctx),
-      getLeadsServiceClient().pendientes(ctx).catch(() => null),
-    ]);
-
+    const leads = await getLeadsServiceClient().listarLeads(contexto(req));
     if (!leads.success) {
       res.status(leads.statusCode ?? 502).json({ success: false, message: "No se pudo obtener el panel de leads" });
       return;
     }
-    if (pendientes === null || !pendientes.success) {
-      degradado.push({ parte: "pendientes", motivo: "el servicio no respondió; se muestra el panel sin lo pendiente" });
-    }
-
-    res.json({
-      success: true,
-      data: {
-        leads: leads.data?.leads ?? [],
-        solicitudesDeBorrado: pendientes?.data?.solicitudesDeBorrado ?? [],
-      },
-      degradado: degradado.length > 0 ? degradado : undefined,
-    });
+    res.json({ success: true, data: { leads: leads.data?.leads ?? [] } });
   },
 
   /**
@@ -221,10 +206,6 @@ export const leadsController = {
     };
   },
 
-  async pendientes(req: Request, res: Response): Promise<void> {
-    reenviar(res, await getLeadsServiceClient().pendientes(contexto(req)), "No se pudo obtener lo pendiente");
-  },
-
   async responder(req: Request, res: Response): Promise<void> {
     const conversacionId = String(req.params.conversacionId);
     const { texto } = req.body ?? {};
@@ -253,17 +234,6 @@ export const leadsController = {
       return;
     }
     res.status(201).json({ success: true, data: respuesta.data });
-  },
-
-  async ejecutarBorrado(req: Request, res: Response): Promise<void> {
-    const leadId = String(req.params.leadId);
-    const respuesta = await getLeadsServiceClient().ejecutarBorrado(leadId, contexto(req));
-    await auditar(req, { accion: "EXECUTE_DELETION", recurso: "lead", recursoId: leadId, resultado: respuesta });
-    if (!respuesta.success) {
-      res.status(respuesta.statusCode ?? 502).json({ success: false, message: "No se pudo ejecutar el borrado" });
-      return;
-    }
-    res.status(204).send();
   },
 
   async clasificaciones(req: Request, res: Response): Promise<void> {

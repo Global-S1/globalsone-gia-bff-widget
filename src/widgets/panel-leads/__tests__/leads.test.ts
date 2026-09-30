@@ -9,14 +9,12 @@ import { ORIGEN, cabecerasDeSesion, tokenDelBackoffice, tokenDelPanel } from "./
 
 const leads = vi.hoisted(() => ({
   listarLeads: vi.fn(),
-  pendientes: vi.fn(),
   historialDelLead: vi.fn(),
   catalogo: vi.fn(),
   bandeja: vi.fn(),
   verConversacion: vi.fn(),
   accion: vi.fn(),
   responder: vi.fn(),
-  ejecutarBorrado: vi.fn(),
   clasificacionesDelLead: vi.fn(),
   corregirClase: vi.fn(),
   corregirContacto: vi.fn(),
@@ -72,7 +70,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   auditoria.publishAudit.mockResolvedValue(undefined);
   leads.listarLeads.mockResolvedValue({ success: true, statusCode: 200, data: { leads: [LEAD] } });
-  leads.pendientes.mockResolvedValue({ success: true, statusCode: 200, data: { solicitudesDeBorrado: [] } });
   leads.historialDelLead.mockResolvedValue({
     success: true,
     statusCode: 200,
@@ -123,13 +120,19 @@ describe("Quién entra por la puerta del panel", () => {
 });
 
 describe("Lo que sirve, y cómo degrada", () => {
-  it("el panel llega en una respuesta, y sin lo pendiente si ese servicio falla", async () => {
-    leads.pendientes.mockRejectedValue(new Error("caído"));
+  it("el panel llega en una respuesta, sólo con los leads: las solicitudes de borrado no salen por aquí", async () => {
     const r = await get("/v1/panel/leads/panel");
 
     expect(r.status).toBe(200);
     expect(r.body.data.leads).toHaveLength(1);
-    expect(r.body.degradado).toEqual([expect.objectContaining({ parte: "pendientes" })]);
+    expect(r.body.data).not.toHaveProperty("solicitudesDeBorrado");
+    expect(r.body.degradado).toBeUndefined();
+  });
+
+  it("ni lo pendiente ni ejecutar un borrado existen por esta puerta (404)", async () => {
+    expect((await get("/v1/panel/leads/pendientes")).status).toBe(404);
+    const r = await request(server()).delete("/v1/panel/leads/leads/l-1").set(cabecerasDeSesion()).set("authorization", `Bearer ${tokenDelPanel()}`);
+    expect(r.status).toBe(404);
   });
 
   it("la ficha del lead trae las clases del tenant y el nombre de quien corrigió", async () => {
@@ -204,13 +207,6 @@ describe("Lo que sirve, y cómo degrada", () => {
     const ajeno = await post("/v1/panel/leads/conversaciones/c-1/recursos/r-de-otro").send({ texto: "toma" });
     expect(ajeno.status).toBe(404);
     expect(leads.mandarRecurso).not.toHaveBeenCalled();
-  });
-
-  it("ejecutar un borrado es de ATENDER y responde 204", async () => {
-    leads.ejecutarBorrado.mockResolvedValue({ success: true, statusCode: 204 });
-    const r = await request(server()).delete("/v1/panel/leads/leads/l-1").set(cabecerasDeSesion()).set("authorization", `Bearer ${tokenDelPanel()}`);
-    expect(r.status).toBe(204);
-    expect((await request(server()).delete("/v1/panel/leads/leads/l-1").set(cabecerasDeSesion("leads:read")).set("authorization", `Bearer ${tokenDelPanel()}`)).status).toBe(403);
   });
 });
 

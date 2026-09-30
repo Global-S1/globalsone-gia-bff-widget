@@ -196,10 +196,6 @@ export class LeadsServiceClient extends BaseServiceClient {
     );
   }
 
-  pendientes(context: IRequestContext): Promise<IServiceResponse<{ solicitudesDeBorrado: IConversacion[] }>> {
-    return this.request({ method: "GET", path: "/v1/pendientes", headers: this.internalHeaders() }, context);
-  }
-
   /** Sólo para componer las clases dentro de la ficha: no hay ruta de catálogo en esta puerta. */
   catalogo(context: IRequestContext): Promise<IServiceResponse<{ clases: IClase[] }>> {
     return this.request({ method: "GET", path: "/v1/catalogo", headers: this.internalHeaders() }, context);
@@ -243,13 +239,6 @@ export class LeadsServiceClient extends BaseServiceClient {
         headers: this.internalHeaders(),
         retries: 0,
       },
-      context,
-    );
-  }
-
-  ejecutarBorrado(leadId: string, context: IRequestContext): Promise<IServiceResponse<void>> {
-    return this.request(
-      { method: "DELETE", path: `/v1/leads/${encodeURIComponent(leadId)}`, headers: this.internalHeaders(), retries: 0 },
       context,
     );
   }

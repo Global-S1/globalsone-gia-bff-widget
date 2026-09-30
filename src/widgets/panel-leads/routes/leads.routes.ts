@@ -5,9 +5,10 @@ import { PERMISOS_DE_LEADS, requierePermiso } from "../middlewares/requiere-perm
 /**
  * SPEC-271 · SPEC-275 — las cuatro vistas del panel incrustado y sus acciones.
  *
- * Verlas es de VER; actuar es de ATENDER. **No hay catálogo, canales ni
- * ajustes**: quien los necesite entra al backoffice. Un permiso de más en el
- * backoffice no abre nada aquí, porque aquí no hay ruta que lo pida.
+ * Verlas es de VER; actuar es de ATENDER. **No hay catálogo, canales, ajustes
+ * ni solicitudes de borrado**: quien los necesite entra al backoffice. Un
+ * permiso de más en el backoffice no abre nada aquí, porque aquí no hay ruta
+ * que lo pida.
  */
 export function leadsRoutes(): Router {
   const router = Router();
@@ -16,12 +17,10 @@ export function leadsRoutes(): Router {
 
   // ── Panel y ficha del lead ────────────────────────────────────────────────
   router.get("/panel", VER, (req, res) => leadsController.panel(req, res));
-  router.get("/pendientes", VER, (req, res) => leadsController.pendientes(req, res));
   router.get("/leads/:leadId/historial", VER, (req, res) => leadsController.historial(req, res));
   router.get("/leads/:leadId/clasificaciones", VER, (req, res) => leadsController.clasificaciones(req, res));
   router.put("/leads/:leadId/clase", ATENDER, (req, res) => leadsController.corregirClase(req, res));
   router.put("/leads/:leadId/contacto", ATENDER, (req, res) => leadsController.corregirContacto(req, res));
-  router.delete("/leads/:leadId", ATENDER, (req, res) => leadsController.ejecutarBorrado(req, res));
 
   // ── Bandeja y conversación ────────────────────────────────────────────────
   router.get("/conversaciones", VER, (req, res) => leadsController.bandeja(req, res));

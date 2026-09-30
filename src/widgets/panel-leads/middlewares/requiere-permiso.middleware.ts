@@ -8,7 +8,7 @@ import type { NextFunction, Request, Response } from "express";
 export const PERMISOS_DE_LEADS = {
   /** Ver el panel, la bandeja, la ficha y las conversaciones. */
   VER: "leads:read",
-  /** Tomar, liberar, devolver, responder, corregir y ejecutar borrados. */
+  /** Tomar, liberar, devolver, responder y corregir. */
   ATENDER: "leads:attend",
 } as const;
 
