@@ -43,16 +43,32 @@ interface Degradado {
 
 export const leadsController = {
   /**
-   * El panel: los leads con su clase vigente. **Sin las solicitudes de
+   * El panel: los leads con su clase vigente, **y las clases del tenant con su
+   * color** para pintar las etiquetas y las columnas. **Sin las solicitudes de
    * borrado**: se gestionan en el backoffice de GIA, no desde un anfitrión.
+   *
+   * Si el catálogo no contesta, el panel se sirve igual —sin colores— y se dice
+   * qué faltó: un panel que no abre por no saber un color es peor que uno gris.
    */
   async panel(req: Request, res: Response): Promise<void> {
-    const leads = await getLeadsServiceClient().listarLeads(contexto(req));
+    const ctx = contexto(req);
+    const [leads, catalogo] = await Promise.all([
+      getLeadsServiceClient().listarLeads(ctx),
+      getLeadsServiceClient().catalogo(ctx).catch(() => null),
+    ]);
     if (!leads.success) {
       res.status(leads.statusCode ?? 502).json({ success: false, message: "No se pudo obtener el panel de leads" });
       return;
     }
-    res.json({ success: true, data: { leads: leads.data?.leads ?? [] } });
+    const catalogoVino = catalogo?.success === true;
+    res.json({
+      success: true,
+      data: {
+        leads: leads.data?.leads ?? [],
+        clases: catalogoVino ? (catalogo.data?.clases ?? []).map((c) => ({ id: c.id, nombre: c.nombre, color: c.color })) : [],
+      },
+      degradado: catalogoVino ? undefined : [{ parte: "clases", motivo: "el catálogo no respondió; las clases se ven sin su color" }],
+    });
   },
 
   /**
@@ -80,7 +96,7 @@ export const leadsController = {
       return;
     }
 
-    const clases = catalogo?.success === true ? (catalogo.data?.clases ?? []).map((c) => ({ id: c.id, nombre: c.nombre })) : [];
+    const clases = catalogo?.success === true ? (catalogo.data?.clases ?? []).map((c) => ({ id: c.id, nombre: c.nombre, color: c.color })) : [];
     if (catalogo === null || catalogo.success !== true) {
       degradado.push({ parte: "clases", motivo: "el catálogo no respondió; no se podrá corregir la clase hasta que vuelva" });
     }

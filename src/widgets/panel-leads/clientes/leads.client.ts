@@ -46,6 +46,9 @@ export interface ILead {
   identificadorEnCanal: string;
   clasificacion: string;
   contacto?: IContactoDelLead;
+  /** Lo último que pasó con el lead (ms-leads lo añade al listado). */
+  ultimaInteraccionEn?: string | null;
+  ultimoMensajeDelLead?: { texto: string; enviadoEn: string } | null;
 }
 
 export interface IPlazoDeRespuesta {
@@ -82,6 +85,8 @@ export interface IClase {
   id: string;
   nombre: string;
   descripcion: string;
+  /** `#rrggbb`: lo elige el tenant y lo pintan la etiqueta de la lista y la columna del tablero. */
+  color?: string;
   leads: number;
 }
 

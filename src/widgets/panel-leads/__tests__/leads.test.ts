@@ -75,7 +75,7 @@ beforeEach(() => {
     statusCode: 200,
     data: { lead: LEAD, conversaciones: [], mensajes: [], contactos: [{ id: "k-1", campo: "nombre", valor: "Ana", origen: "persona", actorId: "user-otro", puestoEn: "x" }] },
   });
-  leads.catalogo.mockResolvedValue({ success: true, statusCode: 200, data: { clases: [{ id: "cl-1", nombre: "Caliente", descripcion: "", leads: 3 }] } });
+  leads.catalogo.mockResolvedValue({ success: true, statusCode: 200, data: { clases: [{ id: "cl-1", nombre: "Caliente", descripcion: "", color: "#8b5cf6", leads: 3 }] } });
   leads.bandeja.mockResolvedValue({ success: true, statusCode: 200, data: { conversaciones: [CONVERSACION] } });
   leads.verConversacion.mockResolvedValue({ success: true, statusCode: 200, data: { conversacion: CONVERSACION, mensajes: [] } });
   leads.accion.mockResolvedValue({ success: true, statusCode: 200, data: { ...CONVERSACION, asignadaA: "user-ana" } });
@@ -129,6 +129,22 @@ describe("Lo que sirve, y cómo degrada", () => {
     expect(r.body.degradado).toBeUndefined();
   });
 
+  it("el panel trae las clases con su color, y sin catálogo se sirve igual y dice qué faltó", async () => {
+    const con = await get("/v1/panel/leads/panel");
+    expect(con.body.data.clases).toEqual([{ id: "cl-1", nombre: "Caliente", color: "#8b5cf6" }]);
+
+    leads.catalogo.mockResolvedValue({ success: false, statusCode: 503 });
+    const sin = await get("/v1/panel/leads/panel");
+    expect(sin.status).toBe(200);
+    expect(sin.body.data.clases).toEqual([]);
+    expect(sin.body.degradado).toEqual([expect.objectContaining({ parte: "clases" })]);
+
+    leads.catalogo.mockRejectedValue(new Error("caído"));
+    const caido = await get("/v1/panel/leads/panel");
+    expect(caido.status).toBe(200);
+    expect(caido.body.degradado).toEqual([expect.objectContaining({ parte: "clases" })]);
+  });
+
   it("ni lo pendiente ni ejecutar un borrado existen por esta puerta (404)", async () => {
     expect((await get("/v1/panel/leads/pendientes")).status).toBe(404);
     const r = await request(server()).delete("/v1/panel/leads/leads/l-1").set(cabecerasDeSesion()).set("authorization", `Bearer ${tokenDelPanel()}`);
@@ -139,7 +155,7 @@ describe("Lo que sirve, y cómo degrada", () => {
     const r = await get("/v1/panel/leads/leads/l-1/historial");
 
     expect(r.status).toBe(200);
-    expect(r.body.data.clases).toEqual([{ id: "cl-1", nombre: "Caliente" }]);
+    expect(r.body.data.clases).toEqual([{ id: "cl-1", nombre: "Caliente", color: "#8b5cf6" }]);
     expect(r.body.data.contactos[0].actorNombre).toBe("Otro Supervisor");
     expect(r.body.degradado).toBeUndefined();
   });
