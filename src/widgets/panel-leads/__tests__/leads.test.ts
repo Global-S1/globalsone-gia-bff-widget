@@ -170,6 +170,32 @@ describe("Lo que sirve, y cómo degrada", () => {
     expect(r.body.degradado).toEqual([expect.objectContaining({ parte: "clases" })]);
   });
 
+  it("la bandeja trae las clases con su color y deja pasar la clase y el contacto de cada fila", async () => {
+    leads.bandeja.mockResolvedValue({
+      success: true,
+      statusCode: 200,
+      data: { conversaciones: [{ ...CONVERSACION, clasificacion: "Caliente", contacto: { nombre: "Ana", correo: null, telefono: "51999" } }] },
+    });
+    const r = await get("/v1/panel/leads/conversaciones");
+
+    expect(r.body.data.clases).toEqual([{ id: "cl-1", nombre: "Caliente", color: "#8b5cf6" }]);
+    expect(r.body.data.conversaciones[0]).toMatchObject({ clasificacion: "Caliente", contacto: { nombre: "Ana", telefono: "51999" } });
+    expect(r.body.degradado).toBeUndefined();
+  });
+
+  it("sin catálogo la bandeja se sirve igual y dice qué faltó", async () => {
+    leads.catalogo.mockResolvedValue({ success: false, statusCode: 503 });
+    const sin = await get("/v1/panel/leads/conversaciones");
+    expect(sin.status).toBe(200);
+    expect(sin.body.data.clases).toEqual([]);
+    expect(sin.body.degradado).toEqual([expect.objectContaining({ parte: "clases" })]);
+
+    leads.catalogo.mockRejectedValue(new Error("caído"));
+    const caido = await get("/v1/panel/leads/conversaciones");
+    expect(caido.status).toBe(200);
+    expect(caido.body.degradado).toEqual([expect.objectContaining({ parte: "clases" })]);
+  });
+
   it("la bandeja pone nombre a quien la tiene", async () => {
     const r = await get("/v1/panel/leads/conversaciones?estado=esperando_persona");
     expect(r.status).toBe(200);

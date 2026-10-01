@@ -166,8 +166,21 @@ export const leadsController = {
       return;
     }
     const conversaciones = respuesta.data?.conversaciones ?? [];
-    const nombres = await nombresDe(conversaciones.map((c) => c.asignadaA), ctx);
-    res.status(200).json({ success: true, data: { conversaciones: conversaciones.map((c) => conNombre(c, nombres)) } });
+    // Las clases con su color, para pintar la clase de cada fila. Mismo patrón que el panel:
+    // si el catálogo no contesta, la bandeja se sirve igual —sin colores— y se dice qué faltó.
+    const [nombres, catalogo] = await Promise.all([
+      nombresDe(conversaciones.map((c) => c.asignadaA), ctx),
+      getLeadsServiceClient().catalogo(ctx).catch(() => null),
+    ]);
+    const catalogoVino = catalogo?.success === true;
+    res.status(200).json({
+      success: true,
+      data: {
+        conversaciones: conversaciones.map((c) => conNombre(c, nombres)),
+        clases: catalogoVino ? (catalogo.data?.clases ?? []).map((c) => ({ id: c.id, nombre: c.nombre, color: c.color })) : [],
+      },
+      degradado: catalogoVino ? undefined : [{ parte: "clases", motivo: "el catálogo no respondió; las clases se ven sin su color" }],
+    });
   },
 
   /** La ficha de una conversación: el hilo, el lead, el consumo y el agente. Sólo el hilo es imprescindible. */

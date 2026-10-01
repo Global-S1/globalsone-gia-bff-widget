@@ -56,6 +56,12 @@ export interface IPlazoDeRespuesta {
   hasta: string | null;
 }
 
+/** Una fila de la bandeja: la conversación con la clase del lead y lo que dijo de sí mismo. */
+export interface IConversacionEnBandeja extends IConversacion {
+  clasificacion: string;
+  contacto: { nombre: string | null; correo: string | null; telefono: string | null };
+}
+
 export interface IConversacion {
   id: string;
   organizacionId: string;
@@ -157,7 +163,7 @@ export class LeadsServiceClient extends BaseServiceClient {
     );
   }
 
-  bandeja(estado: string | undefined, context: IRequestContext): Promise<IServiceResponse<{ conversaciones: IConversacion[] }>> {
+  bandeja(estado: string | undefined, context: IRequestContext): Promise<IServiceResponse<{ conversaciones: IConversacionEnBandeja[] }>> {
     const consulta = estado === undefined ? "" : `?estado=${encodeURIComponent(estado)}`;
     return this.request({ method: "GET", path: `/v1/conversaciones${consulta}`, headers: this.internalHeaders() }, context);
   }
