@@ -10,6 +10,7 @@ import { ORIGEN, cabecerasDeSesion, tokenDelBackoffice, tokenDelPanel } from "./
 const leads = vi.hoisted(() => ({
   listarLeads: vi.fn(),
   historialDelLead: vi.fn(),
+  atencionDelLead: vi.fn(),
   catalogo: vi.fn(),
   bandeja: vi.fn(),
   verConversacion: vi.fn(),
@@ -223,6 +224,52 @@ describe("Lo que sirve, y cómo degrada", () => {
     const ajeno = await post("/v1/panel/leads/conversaciones/c-1/recursos/r-de-otro").send({ texto: "toma" });
     expect(ajeno.status).toBe(404);
     expect(leads.mandarRecurso).not.toHaveBeenCalled();
+  });
+});
+
+describe("El historial de atención (leads:history)", () => {
+  const EVENTOS = [
+    { id: "e2", conversacionId: "c-1", canal: "telegram", tipo: "liberada", actorId: "user-otro", motivo: null, en: "2026-09-30T10:05:00.000Z" },
+    { id: "e1", conversacionId: "c-1", canal: "telegram", tipo: "iniciada", actorId: null, motivo: null, en: "2026-09-30T10:00:00.000Z" },
+  ];
+
+  it("sin el permiso es un 403 y ni se llama al servicio: ni leer ni atender lo dan", async () => {
+    const r = await get("/v1/panel/leads/leads/l-1/atencion", "leads:read,leads:attend");
+    expect(r.status).toBe(403);
+    expect(r.body.permisoRequerido).toBe("leads:history");
+    expect(leads.atencionDelLead).not.toHaveBeenCalled();
+  });
+
+  it("con el permiso llega con el nombre de cada persona, y la línea del sistema sin nombre", async () => {
+    leads.atencionDelLead.mockResolvedValue({ success: true, statusCode: 200, data: { eventos: EVENTOS } });
+    const r = await get("/v1/panel/leads/leads/l-1/atencion", "leads:history");
+    expect(r.status).toBe(200);
+    expect(r.body.data.eventos[0]).toMatchObject({ tipo: "liberada", actorNombre: "Otro Supervisor" });
+    expect(r.body.data.eventos[1]).toMatchObject({ tipo: "iniciada", actorNombre: null });
+    expect(leads.atencionDelLead).toHaveBeenCalledWith("l-1", expect.anything());
+  });
+
+  it("si no se puede resolver un nombre, la línea sale sin él y no se rompe nada", async () => {
+    leads.atencionDelLead.mockResolvedValue({ success: true, statusCode: 200, data: { eventos: EVENTOS } });
+    usuarios.nombresDeUsuarios.mockRejectedValue(new Error("ms-auth caído"));
+    const r = await get("/v1/panel/leads/leads/l-1/atencion", "leads:history");
+    expect(r.status).toBe(200);
+    expect(r.body.data.eventos[0].actorNombre).toBeNull();
+  });
+
+  it("un servicio sin datos devuelve la lista vacía, y un fallo se reenvía", async () => {
+    leads.atencionDelLead.mockResolvedValue({ success: true, statusCode: 200 });
+    expect((await get("/v1/panel/leads/leads/l-1/atencion", "leads:history")).body.data.eventos).toEqual([]);
+    leads.atencionDelLead.mockResolvedValue({ success: false, statusCode: 404 });
+    expect((await get("/v1/panel/leads/leads/l-1/atencion", "leads:history")).status).toBe(404);
+  });
+
+  it("leerlo queda auditado: es saber quién atendió a quién", async () => {
+    leads.atencionDelLead.mockResolvedValue({ success: true, statusCode: 200, data: { eventos: [] } });
+    await get("/v1/panel/leads/leads/l-1/atencion", "leads:history");
+    expect(auditoria.publishAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ service: "bff-widget", action: "READ_ATTENTION_HISTORY", resource: "lead", resourceId: "l-1", actorId: "user-ana" }),
+    );
   });
 });
 

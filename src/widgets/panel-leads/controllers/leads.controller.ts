@@ -79,6 +79,38 @@ export const leadsController = {
    * administrarlas. Si el catálogo no contesta, la ficha se sirve igual y se
    * dice qué faltó.
    */
+  /**
+   * El historial de atención de un lead, con el nombre de cada persona.
+   *
+   * ms-leads guarda quién como un identificador opaco; aquí se traduce, igual
+   * que en la ficha. **Un nombre que no se puede resolver no rompe nada**: la
+   * línea llega sin nombre y la pantalla dice «una persona».
+   */
+  async atencion(req: Request, res: Response): Promise<void> {
+    const ctx = contexto(req);
+    const leadId = String(req.params.leadId);
+    const respuesta = await getLeadsServiceClient().atencionDelLead(leadId, ctx);
+
+    await auditar(req, { accion: "READ_ATTENTION_HISTORY", recurso: "lead", recursoId: leadId, resultado: respuesta });
+
+    if (!respuesta.success) {
+      reenviar(res, respuesta, "No se pudo obtener el historial de atención");
+      return;
+    }
+
+    const eventos = respuesta.data?.eventos ?? [];
+    const nombres = await nombresDe(eventos.map((e) => e.actorId ?? null), ctx);
+    res.status(200).json({
+      success: true,
+      data: {
+        eventos: eventos.map((e) => ({
+          ...e,
+          actorNombre: e.actorId === null || e.actorId === undefined ? null : (nombres.get(e.actorId) ?? null),
+        })),
+      },
+    });
+  },
+
   async historial(req: Request, res: Response): Promise<void> {
     const ctx = contexto(req);
     const leadId = String(req.params.leadId);

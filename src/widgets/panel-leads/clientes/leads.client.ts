@@ -90,6 +90,17 @@ export interface IClase {
   leads: number;
 }
 
+export interface IEventoDeAtencion {
+  id: string;
+  conversacionId: string;
+  canal: string | null;
+  tipo: string;
+  /** La persona implicada, como id opaco: ms-leads no conoce personas. */
+  actorId: string | null;
+  motivo: string | null;
+  en: string;
+}
+
 export interface IClasificacion {
   id: string;
   leadId: string;
@@ -134,6 +145,14 @@ export class LeadsServiceClient extends BaseServiceClient {
   > {
     return this.request(
       { method: "GET", path: `/v1/leads/${encodeURIComponent(leadId)}/historial`, headers: this.internalHeaders() },
+      context,
+    );
+  }
+
+  /** El historial de atención del lead: quién la tuvo, cuándo, y lo que hizo el sistema. */
+  atencionDelLead(leadId: string, context: IRequestContext): Promise<IServiceResponse<{ eventos: IEventoDeAtencion[] }>> {
+    return this.request(
+      { method: "GET", path: `/v1/leads/${encodeURIComponent(leadId)}/atencion`, headers: this.internalHeaders() },
       context,
     );
   }

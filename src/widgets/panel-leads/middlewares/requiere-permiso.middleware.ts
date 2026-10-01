@@ -10,6 +10,12 @@ export const PERMISOS_DE_LEADS = {
   VER: "leads:read",
   /** Tomar, liberar, devolver, responder y corregir. */
   ATENDER: "leads:attend",
+  /**
+   * Ver el historial de atención de un lead: quién lo ha tenido y cuándo.
+   * Permiso propio y **ningún rol del panel lo trae de serie**: dice qué
+   * personas han atendido a quién, y eso lo concede el tenant a propósito.
+   */
+  HISTORIAL: "leads:history",
 } as const;
 
 /**

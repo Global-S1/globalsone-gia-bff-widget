@@ -14,10 +14,12 @@ export function leadsRoutes(): Router {
   const router = Router();
   const VER = requierePermiso(PERMISOS_DE_LEADS.VER);
   const ATENDER = requierePermiso(PERMISOS_DE_LEADS.ATENDER);
+  const HISTORIAL = requierePermiso(PERMISOS_DE_LEADS.HISTORIAL);
 
   // ── Panel y ficha del lead ────────────────────────────────────────────────
   router.get("/panel", VER, (req, res) => leadsController.panel(req, res));
   router.get("/leads/:leadId/historial", VER, (req, res) => leadsController.historial(req, res));
+  router.get("/leads/:leadId/atencion", HISTORIAL, (req, res) => leadsController.atencion(req, res));
   router.get("/leads/:leadId/clasificaciones", VER, (req, res) => leadsController.clasificaciones(req, res));
   router.put("/leads/:leadId/clase", ATENDER, (req, res) => leadsController.corregirClase(req, res));
   router.put("/leads/:leadId/contacto", ATENDER, (req, res) => leadsController.corregirContacto(req, res));
