@@ -19,6 +19,9 @@ services:
       # SPEC-167 - la segunda puerta del mensaje del widget (ADR-034).
       - MS_DOCUMENTS_URL=${MS_DOCUMENTS_URL:-http://ms-documents-gia-dev:3050}
       - MS_LEADS_URL=${MS_LEADS_URL:-http://ms-leads-gia-dev:3150}
+      # SPEC-271 - el panel incrustado de GIA Leads (src/widgets/panel-leads).
+      - MS_MESSAGING_URL=${MS_MESSAGING_URL:-http://ms-messaging-gia-dev:3140}
+      - MS_AUDIT_URL=${MS_AUDIT_URL:-http://ms-audit-gia-dev:3100}
       - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
     networks:
       coolify:

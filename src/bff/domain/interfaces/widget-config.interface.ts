@@ -24,6 +24,15 @@ export interface IWidgetConfig {
    * panel, y un widget apagado no gasta modelo.
    */
   readonly active: boolean;
+  /**
+   * La organización de este widget no está al día de pago.
+   *
+   * Va aparte de `active` porque son decisiones de personas distintas: `active`
+   * lo decidió el cliente para ese widget, y esto lo decidimos nosotros sobre
+   * su organización. Mezclarlas obligaría a recordar cuál era cuál para
+   * devolverle su configuración intacta al reactivar.
+   */
+  readonly organizacionSuspendida?: boolean;
   /** El interruptor que decide por qué puerta entra el mensaje (ADR-034). */
   readonly leadsEnabled: boolean;
   /** Dirección `http`/`https` del formulario del tenant, o nada. */

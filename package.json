@@ -1,7 +1,7 @@
 {
   "name": "globalsone-bff-widget",
   "version": "1.0.0",
-  "description": "BFF (Backend for Frontend) del GIA Widget - orquesta ms-agents, ms-auth y ms-customers",
+  "description": "BFF (Backend for Frontend) de los widgets incrustables de GIA: el chat y el panel de leads. Orquesta ms-agents, ms-leads, ms-auth y ms-customers",
   "main": "build/index.js",
   "packageManager": "pnpm@9.15.4",
   "scripts": {
@@ -52,6 +52,8 @@
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vitest": "^3"
+    "vitest": "^3",
+    "@types/supertest": "^6.0.2",
+    "supertest": "^7.0.0"
   }
 }

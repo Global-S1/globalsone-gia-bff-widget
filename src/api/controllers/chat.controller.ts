@@ -294,6 +294,22 @@ export async function createChat(req: Request, res: Response): Promise<void> {
         return;
       }
 
+      /*
+       * **La organización no está al día.** Se contesta lo mismo que un widget
+       * apagado y por la misma puerta: delante está el cliente de nuestro
+       * cliente, que no sabe que existe una suscripción y no tiene por qué
+       * enterarse de una deuda ajena.
+       */
+      if (configuracion.organizacionSuspendida === true) {
+        logger.warn("Un widget de una organización suspendida recibió un mensaje", {
+          widgetId: configuracion.widgetId,
+        });
+        res
+          .status(StatusCodes.FORBIDDEN)
+          .json({ success: false, message: NO_ESTA_DISPONIBLE });
+        return;
+      }
+
       if (!configuracion.active) {
         // Un widget apagado no gasta modelo: se contesta antes de las dos
         // puertas, no dentro de una.

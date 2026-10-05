@@ -998,6 +998,33 @@ describe("SPEC-195 · la puerta del widget con identidad propia", () => {
     expect(cuerpo).not.toContain("widget con ese identificador");
   });
 
+  it("Un widget de una organización suspendida no atiende, y no dice por qué", async () => {
+    /*
+     * Delante está el cliente de NUESTRO cliente: no sabe que existe una
+     * suscripción y no tiene por qué enterarse de una deuda ajena. Se contesta
+     * lo mismo que un widget apagado, por la misma puerta y antes de gastar
+     * modelo.
+     */
+    getWidgetConfig.mockResolvedValue(
+      configuracion(true, null, { organizacionSuspendida: true }),
+    );
+    const res = respuesta();
+
+    await createChat(
+      peticion({ widgetId: WIDGET, visitanteId: VISITANTE }),
+      comoRespuesta(res),
+    );
+
+    expect(res.codigo).toBe(403);
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      message: expect.stringContaining("no está disponible"),
+    });
+    expect(JSON.stringify(res.json.mock.calls)).not.toMatch(/suspend|pago|deuda/i);
+    expect(createChatStream).not.toHaveBeenCalled();
+    expect(atenderMensajeDelWidget).not.toHaveBeenCalled();
+  });
+
   it("Un widget desactivado no atiende", async () => {
     getWidgetConfig.mockResolvedValue(configuracion(true, null, { active: false }));
     const res = respuesta();

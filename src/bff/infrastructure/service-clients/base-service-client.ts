@@ -137,8 +137,27 @@ export abstract class BaseServiceClient implements IServiceClient {
         const parsed = JSON.parse(bodyText);
 
         if (response.statusCode >= 200 && response.statusCode < 300) {
-          // Success response - extract data
-          data = parsed.data ?? parsed;
+          /*
+           * Se desenvuelve el sobre `{success, data}` **por su forma, no por si
+           * `data` trae algo**.
+           *
+           * Antes era `parsed.data ?? parsed`, y eso tomaba por «no hay sobre»
+           * un sobre cuyo `data` es `null`. Pero `null` es una respuesta
+           * legítima y frecuente: «este tenant todavía no tiene datos de
+           * facturación» se contesta así, a propósito, para que la pantalla
+           * pueda pintar el formulario vacío.
+           *
+           * El resultado era que quien preguntaba recibía el sobre entero en
+           * lugar del `null`, y la pantalla lo pintaba como si fuera el dato:
+           * un objeto sin ninguno de sus campos. Reventaba al leer el primero.
+           */
+          const esSobre =
+            parsed !== null &&
+            typeof parsed === "object" &&
+            !Array.isArray(parsed) &&
+            "success" in parsed &&
+            "data" in parsed;
+          data = (esSobre ? parsed.data : parsed) as T;
         } else {
           // Error response
           error = {
@@ -200,8 +219,12 @@ export abstract class BaseServiceClient implements IServiceClient {
 
   /**
    * Build request headers with context propagation
+   *
+   * `protected` y no `private`: un cliente puede añadir la cabecera con la que
+   * SU servicio identifica a la organización (ms-agents usa
+   * `x-organization-token`) sin reescribir el resto.
    */
-  private buildHeaders(
+  protected buildHeaders(
     customHeaders: Record<string, string> | undefined,
     context: IRequestContext
   ): Record<string, string> {
@@ -223,6 +246,13 @@ export abstract class BaseServiceClient implements IServiceClient {
 
     if (context.userRoles && context.userRoles.length > 0) {
       headers["X-User-Roles"] = context.userRoles.join(",");
+    }
+
+    // La organización de la sesión, cuando la hay. El chat nunca la fija —no
+    // tiene sesión— así que para él esta línea no manda nada; el panel
+    // incrustado la necesita en todas sus llamadas (RF-008).
+    if (context.tenantId) {
+      headers["X-Tenant-Id"] = context.tenantId;
     }
 
     // Add custom headers

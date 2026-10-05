@@ -47,7 +47,12 @@ function respuesta() {
   return { capturado, res: res as never };
 }
 
-const resuelto = (config: Record<string, unknown>) => ({ tipo: "resuelto", config });
+const resuelto = (config: Record<string, unknown>) => ({
+  tipo: "resuelto",
+  // Encendido y al día salvo que la prueba diga otra cosa, que es lo que
+  // responde ms-agents de un widget normal.
+  config: { active: true, organizacionSuspendida: false, ...config },
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -61,7 +66,7 @@ describe("SPEC-259 · Un widget pregunta por lo suyo", () => {
     await configuracionDelWidget(peticion(), res);
 
     expect(capturado.codigo).toBe(200);
-    expect(capturado.cuerpo).toEqual({ topeDeCaracteres: 500 });
+    expect(capturado.cuerpo).toEqual({ topeDeCaracteres: 500, disponible: true });
   });
 
   it("sin tope propio contesta el de la casa, ya resuelto por quien lo sabe", async () => {
@@ -72,7 +77,7 @@ describe("SPEC-259 · Un widget pregunta por lo suyo", () => {
 
     await configuracionDelWidget(peticion(), res);
 
-    expect(capturado.cuerpo).toEqual({ topeDeCaracteres: 90 });
+    expect(capturado.cuerpo).toEqual({ topeDeCaracteres: 90, disponible: true });
   });
 
   it("un widget que no existe no dice que no existe", async () => {
@@ -117,7 +122,36 @@ describe("SPEC-259 · Un widget pregunta por lo suyo", () => {
 
     await configuracionDelWidget(peticion(), res);
 
-    expect(capturado.cuerpo).toEqual({});
+    // El tope no se inventa; la disponibilidad sí se sabe y por eso viaja.
+    expect(capturado.cuerpo).toEqual({ disponible: true });
+  });
+
+  it("una organización suspendida sale como no disponible, sin decir por qué", async () => {
+    /*
+     * Delante está el cliente de nuestro cliente. No sabe que existe una
+     * suscripción y no tiene por qué enterarse de una deuda ajena: un solo
+     * booleano, sin motivo.
+     */
+    resolverWidget.mockResolvedValue(
+      resuelto({ topeDeCaracteres: 500, organizacionSuspendida: true }),
+    );
+    const { capturado, res } = respuesta();
+
+    await configuracionDelWidget(peticion(), res);
+
+    expect(capturado.cuerpo).toEqual({ topeDeCaracteres: 500, disponible: false });
+    expect(JSON.stringify(capturado.cuerpo)).not.toMatch(/suspend|pago|deuda/i);
+  });
+
+  it("un widget que el cliente apagó también sale como no disponible", async () => {
+    // Desde delante son lo mismo: no se puede hacer nada y no corresponde
+    // saber cuál de los dos motivos es.
+    resolverWidget.mockResolvedValue(resuelto({ topeDeCaracteres: 500, active: false }));
+    const { capturado, res } = respuesta();
+
+    await configuracionDelWidget(peticion(), res);
+
+    expect(capturado.cuerpo).toEqual({ topeDeCaracteres: 500, disponible: false });
   });
 
   it("no se publica nada más", async () => {
@@ -136,7 +170,7 @@ describe("SPEC-259 · Un widget pregunta por lo suyo", () => {
 
     await configuracionDelWidget(peticion(), res);
 
-    expect(Object.keys(capturado.cuerpo as object)).toEqual(["topeDeCaracteres"]);
+    expect(Object.keys(capturado.cuerpo as object)).toEqual(["topeDeCaracteres", "disponible"]);
   });
 
   /*

@@ -138,6 +138,14 @@ export const ServiceKeys = {
    * servicio es quien va a buscarlos con el token de servicio.
    */
   DOCUMENTS: "documents",
+  /**
+   * SPEC-271 — sólo los usa el panel incrustado (`src/widgets/panel-leads`):
+   * ms-messaging para saber qué agente atiende una cuenta de canal, y
+   * ms-audit para el rastro de lo que pasa por el panel (SPEC-273; el rastro
+   * viaja por Redis, aquí sólo se le pregunta la salud).
+   */
+  MESSAGING: "messaging",
+  AUDIT: "audit",
 } as const;
 
 export type ServiceKey = (typeof ServiceKeys)[keyof typeof ServiceKeys];
