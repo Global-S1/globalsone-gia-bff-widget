@@ -254,6 +254,9 @@ export abstract class BaseServiceClient implements IServiceClient {
     if (context.tenantId) {
       headers["X-Tenant-Id"] = context.tenantId;
     }
+    if (context.dataScope) {
+      headers["X-Data-Scope"] = context.dataScope;
+    }
 
     // Add custom headers
     if (customHeaders) {

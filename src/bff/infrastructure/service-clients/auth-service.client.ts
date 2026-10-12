@@ -8,6 +8,7 @@ export interface IValidateResult {
   tenantId: string;
   userRole: string;
   userPermissions: string;
+  dataScope: "own" | "tenant";
 }
 
 /**
@@ -40,6 +41,7 @@ export class AuthServiceClient extends BaseServiceClient {
         tenantId: response.headers["x-tenant-id"] || "",
         userRole: response.headers["x-user-role"] || "",
         userPermissions: response.headers["x-user-permissions"] || "",
+        dataScope: response.headers["x-data-scope"] === "tenant" ? "tenant" : "own",
       };
       response.success = true;
     }

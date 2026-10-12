@@ -19,6 +19,7 @@ export interface IWidgetConfig {
   readonly widgetId: string;
   readonly agentId: string;
   readonly organizationId: string;
+  readonly ownerUserId?: string | null;
   /**
    * Si el widget está atendiendo. Nace encendido; el tenant lo apaga desde su
    * panel, y un widget apagado no gasta modelo.

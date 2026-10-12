@@ -66,7 +66,26 @@ describe("LeadsServiceClient", () => {
       agenteId: "a-1",
       visitanteId: "v-1",
       texto: "hola",
+      ownerUserId: null,
     });
+  });
+
+  it("manda el propietario resuelto desde la configuración interna del widget", async () => {
+    request.mockResolvedValue(respuestaJson(200, { conversacionId: "c-1", texto: "hola" }));
+
+    await cliente().atenderMensajeDelWidget(
+      {
+        organizacionId: "org-1",
+        agenteId: "a-1",
+        visitanteId: "v-1",
+        texto: "hola",
+        ownerUserId: "staff-1",
+      },
+      contexto,
+    );
+
+    const [, opciones] = request.mock.calls[0] as [string, Record<string, any>];
+    expect(JSON.parse(opciones.body).ownerUserId).toBe("staff-1");
   });
 
   it("no manda x-user-id: quien escribe no es un usuario del tenant", async () => {

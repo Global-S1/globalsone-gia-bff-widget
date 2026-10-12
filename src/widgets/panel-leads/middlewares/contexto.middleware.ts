@@ -32,6 +32,7 @@ export function contextoDelPanel(req: Request, _res: Response, next: NextFunctio
     userAgent: req.headers["user-agent"],
     tenantId: typeof tenantId === "string" && tenantId !== "" ? tenantId : undefined,
     userPermissions: typeof permisos === "string" && permisos !== "" ? permisos.split(",").map((p) => p.trim()) : undefined,
+    dataScope: req.headers["x-data-scope"] === "tenant" ? "tenant" : "own",
   };
 
   req.context = context;

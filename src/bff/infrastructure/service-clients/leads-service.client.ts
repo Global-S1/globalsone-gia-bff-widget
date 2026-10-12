@@ -17,6 +17,7 @@ export interface IMensajeDelWidget {
    * widget del agente (SPEC-162), que es quien la publica.
    */
   readonly organizacionId: string;
+  readonly ownerUserId?: string | null;
   readonly agenteId: string;
   /** La identidad del lead en este canal: el id que el widget guarda en el navegador. */
   readonly visitanteId: string;
@@ -133,6 +134,7 @@ export class LeadsServiceClient extends BaseServiceClient {
         },
         body: {
           agenteId: params.agenteId,
+          ownerUserId: params.ownerUserId ?? null,
           visitanteId: params.visitanteId,
           texto: params.texto,
           ...(params.ip ? { ip: params.ip } : {}),

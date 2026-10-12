@@ -36,4 +36,5 @@ export interface IRequestContext {
 
   /** Los permisos resueltos por ms-auth en esta petición (sólo el panel). */
   userPermissions?: string[];
+  dataScope?: "own" | "tenant";
 }

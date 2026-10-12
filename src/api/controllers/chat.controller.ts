@@ -326,6 +326,7 @@ export async function createChat(req: Request, res: Response): Promise<void> {
         if (visitanteId) {
           await atenderPorLeads(res, context, {
             organizacionId: configuracion.organizationId,
+            ownerUserId: configuracion.ownerUserId ?? null,
             agenteId: configuracion.agentId,
             visitanteId,
             texto: message,
@@ -477,6 +478,7 @@ async function atenderPorLeads(
   context: IRequestContext,
   mensaje: {
     organizacionId: string;
+    ownerUserId: string | null;
     agenteId: string;
     visitanteId: string;
     texto: string;
