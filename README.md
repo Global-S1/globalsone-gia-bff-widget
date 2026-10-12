@@ -54,3 +54,5 @@ Configurar `MS_AGENTS_URL`, `INTERNAL_SERVICE_TOKEN` y `TRUSTED_PROXIES` (direcc
 Las respuestas y descargas llevan `Cache-Control: no-store`. Los errores del servicio conservan su código HTTP. No se reintentan peticiones automáticamente en el BFF; el cliente reenvía el mismo `requestId` al recuperar una solicitud incierta.
 
 Pruebas: `pnpm test:demo` (compilación y pruebas HTTP con upstream aislado). Base pública detrás del gateway: `https://<gateway>/v1/widget/v1`.
+
+Prueba integrada entre repositorios: con los worktrees `globalsone-gia-ms-agents`, `globalsone-gia-bff-backoffice` y este BFF como hermanos, compilar los tres y ejecutar `DEMO_SMOKE_DATABASE_URL=postgres://...@127.0.0.1:<puerto>/demo_documents node tests/integration/stack-smoke.cjs`. Usar una base local desechable: el test crea y elimina un esquema aislado. Comprueba configuración, conversación, reintentos, cupo por IP, contactos y descargas con modelo/documentos simulados. `DEMO_PREVIEW=1` deja una página local en el puerto 4179 para comprobar el widget; iniciar además su Vite en 4178 y terminar la prueba con SIGTERM para limpiar el esquema.
