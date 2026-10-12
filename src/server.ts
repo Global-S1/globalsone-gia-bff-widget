@@ -8,11 +8,13 @@ import { StatusCodes } from "./entities/shared/infraestructure/lib/http-status-c
 import { correlationIdMiddleware } from "./api/middlewares/correlation-id.middleware";
 import { api } from "./api/api";
 
+import { trustedDemoProxies } from "./api/demo-proxy";
+
 export function server(): Express {
   const app = express();
 
   // Trust proxy for accurate IP detection behind load balancers
-  app.set("trust proxy", true);
+  app.set("trust proxy", trustedDemoProxies());
 
   // CORS configuration
   app.use(
@@ -27,12 +29,14 @@ export function server(): Express {
         "X-Request-ID",
         "unique-tenant-token",
         "ip-address",
+        "x-demo-session",
       ],
       exposedHeaders: [
         "X-Correlation-ID",
         "X-BFF-Duration",
         "X-Partial-Failures",
         "Chat-Session-Id",
+        "Content-Disposition",
       ],
     })
   );
@@ -63,7 +67,7 @@ export function server(): Express {
         customProps: (req: Request) => ({
           correlationId: req.headers["x-correlation-id"],
         }),
-        redact: ["req.headers.authorization", "req.headers['x-api-key']"],
+        redact: ["req.headers.authorization", "req.headers['x-api-key']", "req.headers['x-demo-session']", "req.headers['x-internal-token']"],
       })
     );
   }

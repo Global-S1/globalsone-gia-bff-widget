@@ -44,3 +44,13 @@ Express 4 · TypeScript (commonjs, ES2022) · pnpm 9.15.4 · Node 20 · undici (
 ## Licencia
 
 ISC - GlobalS1
+
+## Demo pública DICEA
+
+La API `/v1/demo/:demoId` admite solo las rutas de demo; no expone los endpoints administrativos. El identificador público no es el token de organización del widget antiguo. La sesión privada viaja en `X-Demo-Session`. El BFF descarta cabeceras de identidad e IP aportadas por el visitante y transmite únicamente la IP resuelta por Express.
+
+Configurar `MS_AGENTS_URL`, `INTERNAL_SERVICE_TOKEN` y `TRUSTED_PROXIES` (direcciones/CIDR explícitos de los proxies confiables). Vacío usa la IP del socket: detrás de un gateway, todos compartirían su cupo hasta configurar correctamente los proxies. Los proxies de borde deben normalizar las cabeceras reenviadas; no confiar globalmente en Internet. El gateway debe permitir `X-Demo-Session` en CORS y exponer `Content-Disposition` para descargas; los cambios correspondientes están en el worktree api-gateway de esta tarea.
+
+Las respuestas y descargas llevan `Cache-Control: no-store`. Los errores del servicio conservan su código HTTP. No se reintentan peticiones automáticamente en el BFF; el cliente reenvía el mismo `requestId` al recuperar una solicitud incierta.
+
+Pruebas: `pnpm test:demo` (compilación y pruebas HTTP con upstream aislado). Base pública detrás del gateway: `https://<gateway>/v1/widget/v1`.

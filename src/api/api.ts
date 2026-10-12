@@ -4,6 +4,8 @@ import { env } from "../entities/shared/infraestructure/config/environments";
 import { getServicesHealth } from "../bff/infrastructure/config/backend-services.config";
 import { chatRoutes } from "./routes/chat.routes";
 
+import { demoRoutes } from "./routes/demo.routes";
+
 export function api(): Router {
   const router = Router();
 
@@ -99,6 +101,7 @@ export function api(): Router {
   // Chat del widget → ms-agents (streaming passthrough). Público: la identidad
   // de organización viaja en el header/body como unique-tenant-token.
   router.use("/chat", chatRoutes());
+  router.use("/demo", demoRoutes());
 
   return router;
 }

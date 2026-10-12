@@ -11,7 +11,8 @@
     "test": "jest --verbose --detectOpenHandles",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "lint": "eslint . --ext .ts"
+    "lint": "eslint . --ext .ts",
+    "test:demo": "pnpm build && node --test tests/demo/*.test.cjs"
   },
   "keywords": [
     "bff",
