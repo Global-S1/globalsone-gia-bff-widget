@@ -16,6 +16,7 @@ services:
       - MS_AGENTS_URL=${MS_AGENTS_URL:-http://ms-agents-gia-prod:3040}
       - MS_CUSTOMERS_URL=${MS_CUSTOMERS_URL:-http://ms-customers-gia-prod:3000}
       - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
     networks:
       coolify:
         aliases:
