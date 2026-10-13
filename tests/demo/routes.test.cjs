@@ -43,3 +43,12 @@ test('catalog uses server tenant, ignores spoofed routing and fails closed witho
  assert.equal(r.status,200);assert.equal(seen[0].path,`/v1/demo/catalog/${tenant}`);
  const unconfigured=await fixture(t);assert.equal((await fetch(unconfigured.url+'/catalog')).status,503);assert.equal(unconfigured.seen.length,0);
 });
+
+test('public page resolves only the server tenant and ignores query agent overrides',async t=>{
+ const tenant='a9ed3533-e010-4709-82dc-1036808cd194';const {url,seen}=await fixture(t,false,tenant);
+ assert.equal((await fetch(`${url}/pages/asistencia-gremial?agent=attacker&tenantId=other`,{headers:{'x-organization-token':'other'}})).status,200);
+ assert.equal(seen[0].path,`/v1/demo/pages/${tenant}/asistencia-gremial`);
+ assert.equal(seen[0].headers['x-organization-token'],undefined);
+ assert.equal((await fetch(`${url}/pages/bad%2Fpath`)).status,404);
+ const unconfigured=await fixture(t);assert.equal((await fetch(unconfigured.url+'/pages/soft')).status,503);
+});

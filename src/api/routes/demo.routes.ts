@@ -27,6 +27,16 @@ export function demoRoutes(options: DemoProxyOptions = {}): Router {
     const body = keys ? Object.fromEntries(keys.filter(key=>req.body?.[key] !== undefined).map(key=>[key, req.body[key]])) : undefined;
     void proxyDemo(req,res,req.path,body,options);
   };
+  router.get("/pages/:slug", (req, res) => {
+    const tenant = options.demoTenant?.() ?? process.env.DEMO_TENANT_ID;
+    if (!tenant || !uuid.test(tenant)) {
+      res.status(503).json({success:false,error:{code:"DEMO_UNAVAILABLE",message:"Página no disponible."}});return;
+    }
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(req.params.slug) || req.params.slug.length > 64) {
+      res.status(404).json({success:false,error:{code:"NOT_FOUND",message:"Página no disponible."}});return;
+    }
+    void proxyDemo(req,res,`/pages/${tenant}/${encodeURIComponent(req.params.slug)}`,undefined,options);
+  });
   router.get("/catalog", (req, res) => {
     const tenant = options.demoTenant?.() ?? process.env.DEMO_TENANT_ID;
     if (!tenant || !uuid.test(tenant)) {
