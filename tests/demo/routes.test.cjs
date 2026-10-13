@@ -4,13 +4,13 @@ const express = require('express');
 const { demoRoutes } = require('../../build/src/api/routes/demo.routes');
 const { trustedDemoProxies } = require('../../build/src/api/demo-proxy');
 
-async function fixture(t, trust = false) {
+async function fixture(t, trust = false, tenant = "") {
  const seen = [];
  const upstream = express(); upstream.use(express.json());
  upstream.use((req,res) => { seen.push({path:req.path,headers:req.headers,body:req.body}); res.status(req.path.endsWith('/messages') ? 429 : 200).json({success:true,data:{ok:true}}); });
  const u = upstream.listen(0,'127.0.0.1'); await new Promise(r=>u.once('listening',r));
  const app=express(); app.set('trust proxy',trust); app.use(express.json());
- app.use('/v1/demo',demoRoutes({baseUrl:()=>`http://127.0.0.1:${u.address().port}`,internalToken:()=> 'server-secret'}));
+ app.use('/v1/demo',demoRoutes({baseUrl:()=>`http://127.0.0.1:${u.address().port}`,internalToken:()=> 'server-secret',demoTenant:()=>tenant}));
  const s=app.listen(0,'127.0.0.1'); await new Promise(r=>s.once('listening',r));
  t.after(()=>{s.closeAllConnections();s.close();u.closeAllConnections();u.close();});
  return {seen,url:`http://127.0.0.1:${s.address().port}/v1/demo`};
@@ -34,4 +34,12 @@ test('session required and quota status/body preserved',async t=>{
 });
 test('proxy trust defaults closed and rejects blanket trust',()=>{
  assert.equal(trustedDemoProxies(undefined),false);assert.equal(trustedDemoProxies(''),false);assert.throws(()=>trustedDemoProxies('true'));assert.throws(()=>trustedDemoProxies('*'));assert.deepEqual(trustedDemoProxies('127.0.0.1, ::1'),['127.0.0.1','::1']);
+});
+
+test('catalog uses server tenant, ignores spoofed routing and fails closed without config',async t=>{
+ const tenant='a9ed3533-e010-4709-82dc-1036808cd194';
+ const {url,seen}=await fixture(t,false,tenant);
+ const r=await fetch(`${url}/catalog?tenantId=attacker`,{headers:{'x-tenant-id':'attacker'}});
+ assert.equal(r.status,200);assert.equal(seen[0].path,`/v1/demo/catalog/${tenant}`);
+ const unconfigured=await fixture(t);assert.equal((await fetch(unconfigured.url+'/catalog')).status,503);assert.equal(unconfigured.seen.length,0);
 });

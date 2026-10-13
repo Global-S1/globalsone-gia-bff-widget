@@ -17,6 +17,7 @@ services:
       - MS_CUSTOMERS_URL=${MS_CUSTOMERS_URL:-http://ms-customers-gia-prod:3000}
       - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
+      - DEMO_TENANT_ID=${DEMO_TENANT_ID:-}
     networks:
       coolify:
         aliases:

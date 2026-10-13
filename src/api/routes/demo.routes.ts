@@ -27,6 +27,13 @@ export function demoRoutes(options: DemoProxyOptions = {}): Router {
     const body = keys ? Object.fromEntries(keys.filter(key=>req.body?.[key] !== undefined).map(key=>[key, req.body[key]])) : undefined;
     void proxyDemo(req,res,req.path,body,options);
   };
+  router.get("/catalog", (req, res) => {
+    const tenant = options.demoTenant?.() ?? process.env.DEMO_TENANT_ID;
+    if (!tenant || !uuid.test(tenant)) {
+      res.status(503).json({success:false,error:{code:"DEMO_UNAVAILABLE",message:"Demo no disponible."}});return;
+    }
+    void proxyDemo(req,res,`/catalog/${tenant}`,undefined,options);
+  });
   router.get("/:demoId",check,pass());
   router.post("/:demoId/sessions",check,pass(["requestId"]));
   router.get("/:demoId/sessions/:sessionId",check,pass());

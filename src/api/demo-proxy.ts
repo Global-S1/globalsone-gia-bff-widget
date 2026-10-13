@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { request } from "undici";
 
 export interface DemoProxyOptions {
+  demoTenant?: () => string | undefined;
   baseUrl?: () => string;
   internalToken?: () => string;
 }
