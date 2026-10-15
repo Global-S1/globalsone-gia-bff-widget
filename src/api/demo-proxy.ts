@@ -17,7 +17,7 @@ export function trustedDemoProxies(value = process.env.TRUSTED_PROXIES): false |
   return proxies;
 }
 
-export async function proxyDemo(req: Request, res: Response, path: string, body: unknown, options: DemoProxyOptions) {
+export async function proxyDemo(req: Request, res: Response, path: string, body: unknown, options: DemoProxyOptions, method: "GET" | "POST" | "PATCH" = req.method as "GET" | "POST" | "PATCH") {
   const baseUrl = options.baseUrl?.() ?? process.env.MS_AGENTS_URL;
   const token = options.internalToken?.() ?? process.env.INTERNAL_SERVICE_TOKEN;
   res.setHeader("Cache-Control", "no-store");
@@ -36,7 +36,7 @@ export async function proxyDemo(req: Request, res: Response, path: string, body:
   if (language) headers["accept-language"] = language;
   try {
     const upstream = await request(`${baseUrl.replace(/\/$/, "")}/v1/demo${path}`, {
-      method: req.method as "GET" | "POST" | "PATCH",
+      method,
       headers, body: body === undefined ? undefined : JSON.stringify(body),
       headersTimeout: 120000, bodyTimeout: 120000,
       maxRedirections: 0,

@@ -7,7 +7,7 @@ const { trustedDemoProxies } = require('../../build/src/api/demo-proxy');
 async function fixture(t, trust = false, tenant = "") {
  const seen = [];
  const upstream = express(); upstream.use(express.json());
- upstream.use((req,res) => { seen.push({path:req.path,headers:req.headers,body:req.body}); res.status(req.path.endsWith('/messages') ? 429 : 200).json({success:true,data:{ok:true}}); });
+ upstream.use((req,res) => { seen.push({method:req.method,path:req.path,headers:req.headers,body:req.body}); res.status(req.path.endsWith('/messages') ? 429 : 200).json({success:true,data:{ok:true}}); });
  const u = upstream.listen(0,'127.0.0.1'); await new Promise(r=>u.once('listening',r));
  const app=express(); app.set('trust proxy',trust); app.use(express.json());
  app.use('/v1/demo',demoRoutes({baseUrl:()=>`http://127.0.0.1:${u.address().port}`,internalToken:()=> 'server-secret',demoTenant:()=>tenant}));
@@ -62,4 +62,7 @@ test('public locale update requires a session and strips identity overrides', as
  assert.equal((await fetch(path,{method:'PATCH',headers:{'Content-Type':'application/json','x-demo-session':'token'},body:JSON.stringify(body)})).status,200);
  assert.deepEqual(seen[0].body,{conversationLocale:'pt-BR'});
  assert.equal(seen[0].headers['x-demo-session'],'token');
+ assert.equal((await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','x-demo-session':'token'},body:JSON.stringify(body)})).status,200);
+ assert.equal(seen[1].method,'PATCH');
+ assert.deepEqual(seen[1].body,{conversationLocale:'pt-BR'});
 });

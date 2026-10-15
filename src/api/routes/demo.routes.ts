@@ -23,9 +23,9 @@ export function demoRoutes(options: DemoProxyOptions = {}): Router {
     }
     next();
   };
-  const pass = (keys?: string[]) => (req: Request,res: Response) => {
+  const pass = (keys?: string[], method?: "PATCH") => (req: Request,res: Response) => {
     const body = keys ? Object.fromEntries(keys.filter(key=>req.body?.[key] !== undefined).map(key=>[key, req.body[key]])) : undefined;
-    void proxyDemo(req,res,req.path,body,options);
+    void proxyDemo(req,res,req.path,body,options,method);
   };
   router.get("/pages/:slug", (req, res) => {
     const tenant = options.demoTenant?.() ?? process.env.DEMO_TENANT_ID;
@@ -48,6 +48,8 @@ export function demoRoutes(options: DemoProxyOptions = {}): Router {
   router.post("/:demoId/sessions",check,pass(["requestId","conversationLocale"]));
   router.get("/:demoId/sessions/:sessionId",check,pass());
   router.patch("/:demoId/sessions/:sessionId/locale",check,pass(["conversationLocale"]));
+  // The public gateway permits GET/POST preflights; the internal update remains PATCH.
+  router.post("/:demoId/sessions/:sessionId/locale",check,pass(["conversationLocale"], "PATCH"));
   router.post("/:demoId/sessions/:sessionId/messages",check,pass(["message","requestId","conversationLocale"]));
   router.post("/:demoId/sessions/:sessionId/contacts",check,pass(["requestId","name","email","phone","company"]));
   router.get("/:demoId/sessions/:sessionId/templates",check,pass());
