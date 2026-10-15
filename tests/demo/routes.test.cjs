@@ -52,3 +52,14 @@ test('public page resolves only the server tenant and ignores query agent overri
  assert.equal((await fetch(`${url}/pages/bad%2Fpath`)).status,404);
  const unconfigured=await fixture(t);assert.equal((await fetch(unconfigured.url+'/pages/soft')).status,503);
 });
+
+test('public locale update requires a session and strips identity overrides', async t => {
+ const {url,seen}=await fixture(t);
+ const path=`${url}/${demo}/sessions/${session}/locale`;
+ const body={conversationLocale:'pt-BR',agentId:'other',tenantId:'other'};
+ assert.equal((await fetch(path,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).status,401);
+ assert.equal(seen.length,0);
+ assert.equal((await fetch(path,{method:'PATCH',headers:{'Content-Type':'application/json','x-demo-session':'token'},body:JSON.stringify(body)})).status,200);
+ assert.deepEqual(seen[0].body,{conversationLocale:'pt-BR'});
+ assert.equal(seen[0].headers['x-demo-session'],'token');
+});

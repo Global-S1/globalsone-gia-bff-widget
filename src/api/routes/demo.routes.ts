@@ -45,13 +45,14 @@ export function demoRoutes(options: DemoProxyOptions = {}): Router {
     void proxyDemo(req,res,`/catalog/${tenant}`,undefined,options);
   });
   router.get("/:demoId",check,pass());
-  router.post("/:demoId/sessions",check,pass(["requestId"]));
+  router.post("/:demoId/sessions",check,pass(["requestId","conversationLocale"]));
   router.get("/:demoId/sessions/:sessionId",check,pass());
-  router.post("/:demoId/sessions/:sessionId/messages",check,pass(["message","requestId"]));
+  router.patch("/:demoId/sessions/:sessionId/locale",check,pass(["conversationLocale"]));
+  router.post("/:demoId/sessions/:sessionId/messages",check,pass(["message","requestId","conversationLocale"]));
   router.post("/:demoId/sessions/:sessionId/contacts",check,pass(["requestId","name","email","phone","company"]));
   router.get("/:demoId/sessions/:sessionId/templates",check,pass());
   router.get("/:demoId/sessions/:sessionId/templates/:templateId",check,pass());
-  router.post("/:demoId/sessions/:sessionId/documents",check,pass(["requestId","templateId","fieldValues","format"]));
+  router.post("/:demoId/sessions/:sessionId/documents",check,pass(["requestId","templateId","fieldValues","format","conversationLocale"]));
   router.get("/:demoId/sessions/:sessionId/documents/:documentId/download",check,pass());
   return router;
 }

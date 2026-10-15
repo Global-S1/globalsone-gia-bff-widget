@@ -36,7 +36,7 @@ export async function proxyDemo(req: Request, res: Response, path: string, body:
   if (language) headers["accept-language"] = language;
   try {
     const upstream = await request(`${baseUrl.replace(/\/$/, "")}/v1/demo${path}`, {
-      method: req.method as "GET" | "POST",
+      method: req.method as "GET" | "POST" | "PATCH",
       headers, body: body === undefined ? undefined : JSON.stringify(body),
       headersTimeout: 120000, bodyTimeout: 120000,
       maxRedirections: 0,
