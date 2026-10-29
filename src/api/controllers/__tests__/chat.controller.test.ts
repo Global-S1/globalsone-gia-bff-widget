@@ -1812,3 +1812,20 @@ describe("SPEC-227 · declarar el widget desconocido", () => {
     expect(mensaje.widgetDesconocido).toBeUndefined();
   });
 });
+
+describe("SPEC-299 · finalidad pública no es autoridad",()=>{
+ beforeEach(()=>{vi.clearAllMocks();limpiarCacheDeConfiguracionDeWidget();createChatStream.mockResolvedValue(respuestaDeAgents());getWidgetConfig.mockResolvedValue(configuracion(false));});
+ it("descarta finalidad y panel declarados por navegador",async()=>{
+  const res=respuesta();
+  await createChat(peticion({widgetId:WIDGET,purpose:"test",chatSessionId:"historical"},{"x-conversation-purpose":"test","x-panel":"backoffice"}),comoRespuesta(res));
+  expect(createChatStream).toHaveBeenCalledTimes(1);
+  const params=createChatStream.mock.calls[0][0];expect(params).not.toHaveProperty("purpose");expect(params).not.toHaveProperty("headers");expect(params.chatPerUserId).toBe("historical");
+  await expect(res.cuerpo()).resolves.toBe("respuesta del agente");
+ });
+ it("sin ámbito no envía interacción autorizada",async()=>{
+  const res=respuesta();await createChat(peticionSinToken({purpose:"test"}),comoRespuesta(res));expect(res.codigo).toBe(401);expect(createChatStream).not.toHaveBeenCalled();
+ });
+ it("preserva el error público de mensaje vacío",async()=>{
+  const res=respuesta();await createChat(peticion({message:" "}),comoRespuesta(res));expect(res.codigo).toBe(400);expect(res.json).toHaveBeenCalledWith({success:false,message:"message es requerido"});expect(createChatStream).not.toHaveBeenCalled();
+ });
+});
