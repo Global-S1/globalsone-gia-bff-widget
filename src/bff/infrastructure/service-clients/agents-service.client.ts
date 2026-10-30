@@ -206,6 +206,8 @@ export class AgentsServiceClient extends BaseServiceClient {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       Accept: "text/plain",
+      "X-Conversation-Purpose": "real",
+      "X-Panel": "widget",
       // Identity translation: el token del widget identifica la organización.
       // OJO: identifica, no autoriza. Ver el comentario de la clase.
       // Marca de canal: ms-agents aplica el tope diario por usuario final (IP)
