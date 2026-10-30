@@ -491,3 +491,13 @@ describe("SPEC-253 · el canal declara que entrega adjuntos y resuelve ficheros"
   });
 });
 
+
+describe("SPEC-299 · finalidad confiable de atención", () => {
+ beforeEach(()=>{vi.clearAllMocks();request.mockResolvedValue({statusCode:200,headers:{},body:{}});});
+ it.each([{}, {chatPerUserId:"historical"}])("siempre afirma real sin reclasificar %j",async extra=>{
+  await cliente().createChatStream({message:"hola",organizacionId:"org-1",agentId:"a-1",...extra,purpose:"test",headers:{"X-Conversation-Purpose":"test","X-Panel":"backoffice"}} as never);
+  const options=request.mock.calls[0][1];
+  expect(options.headers).toMatchObject({"X-Conversation-Purpose":"real","X-Panel":"widget","x-internal-service-token":"secreto-compartido","x-tenant-id":"org-1"});
+  const payload=JSON.parse(options.body);expect(payload).not.toHaveProperty("purpose");expect(payload).not.toHaveProperty("reclassify");
+ });
+});
