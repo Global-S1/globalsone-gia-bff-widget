@@ -123,6 +123,14 @@ export class LeadsServiceClient extends BaseServiceClient {
     super(getServiceConfig(ServiceKeys.LEADS));
   }
 
+  preferenciaTablero(context: IRequestContext): Promise<IServiceResponse<{ ordenColumnas: string[]; version: number }>> {
+    return this.request({ method: "GET", path: "/v1/preferencias/tablero", headers: this.internalHeaders() }, context);
+  }
+
+  guardarPreferenciaTablero(body: { ordenColumnas: string[]; version: number }, context: IRequestContext): Promise<IServiceResponse<{ ordenColumnas: string[]; version: number }>> {
+    return this.request({ method: "PUT", path: "/v1/preferencias/tablero", headers: this.internalHeaders(), body, retries: 0 }, context);
+  }
+
   private internalHeaders(): Record<string, string> {
     const token = process.env.INTERNAL_SERVICE_TOKEN ?? "";
     return token ? { "x-internal-service-token": token } : {};
