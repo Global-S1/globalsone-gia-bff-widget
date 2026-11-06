@@ -12,6 +12,8 @@ import { PERMISOS_DE_LEADS, requierePermiso } from "../middlewares/requiere-perm
  */
 export function leadsRoutes(): Router {
   const router = Router();
+  router.get("/preferencias/tablero", requierePermiso(PERMISOS_DE_LEADS.VER), (req, res) => leadsController.preferenciaTablero(req, res));
+  router.put("/preferencias/tablero", requierePermiso(PERMISOS_DE_LEADS.VER), (req, res) => leadsController.preferenciaTablero(req, res));
   const VER = requierePermiso(PERMISOS_DE_LEADS.VER);
   const ATENDER = requierePermiso(PERMISOS_DE_LEADS.ATENDER);
   const HISTORIAL = requierePermiso(PERMISOS_DE_LEADS.HISTORIAL);

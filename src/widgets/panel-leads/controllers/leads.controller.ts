@@ -42,6 +42,35 @@ interface Degradado {
 }
 
 export const leadsController = {
+  async preferenciaTablero(req: Request, res: Response): Promise<void> {
+    const ctx = req.context;
+    const identidadValida = (value: unknown): value is string => typeof value === "string" && value.trim() !== "" && !value.includes(",");
+    if (!identidadValida(ctx?.tenantId) || !identidadValida(ctx?.userId)) {
+      res.status(400).json({ success: false, message: "Falta una identidad de sesión única" });
+      return;
+    }
+    if (!req.panel?.userId || req.panel.userId !== ctx!.userId) {
+      res.status(401).json({ success: false, message: "El usuario del token no es el de la sesión" });
+      return;
+    }
+    if (req.method === "PUT") {
+      const body = req.body;
+      if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).length !== 2 || !Object.prototype.hasOwnProperty.call(body, "ordenColumnas") || !Object.prototype.hasOwnProperty.call(body, "version")) {
+        res.status(400).json({ success: false, message: "Sólo se admiten ordenColumnas y version" });
+        return;
+      }
+    }
+    const respuesta = req.method === "PUT"
+      ? await getLeadsServiceClient().guardarPreferenciaTablero(req.body, ctx!)
+      : await getLeadsServiceClient().preferenciaTablero(ctx!);
+    await auditar(req, { accion: req.method === "PUT" ? "UPDATE_BOARD_PREFERENCE" : "READ_BOARD_PREFERENCE", recurso: "lead_board_preference", recursoId: ctx!.userId!, resultado: respuesta });
+    if (!respuesta.success) {
+      res.status(respuesta.statusCode ?? 502).json({ success: false, message: "No se pudo obtener o guardar la preferencia del tablero", error: respuesta.error });
+      return;
+    }
+    res.status(200).json({ success: true, data: respuesta.data });
+  },
+
   /**
    * El panel: los leads con su clase vigente, **y las clases del tenant con su
    * color** para pintar las etiquetas y las columnas. **Sin las solicitudes de

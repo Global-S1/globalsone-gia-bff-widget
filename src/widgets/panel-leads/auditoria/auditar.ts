@@ -34,7 +34,7 @@ export async function auditar(
   req: Request,
   evento: {
     accion: string;
-    recurso: "lead_conversation" | "lead";
+    recurso: "lead_conversation" | "lead" | "lead_board_preference";
     recursoId: string;
     resultado: { success: boolean; statusCode?: number; data?: unknown; error?: unknown };
     extra?: Record<string, unknown>;
